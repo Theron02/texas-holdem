@@ -7,15 +7,49 @@ const makeCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 export interface ManagerOptions extends RoomOptions {
   /** 빈 방을 지우기까지 기다리는 시간. 방장이 새로고침해도 코드가 살아 있어야 한다. */
   emptyRoomTtlMs?: number;
+  /** 접속이 끊긴 사람의 좌석을 정리하기까지 기다리는 시간 */
+  disconnectGraceMs?: number;
+  /** 정리 작업을 도는 주기. 0이면 자동 정리를 하지 않는다(테스트용) */
+  sweepIntervalMs?: number;
 }
 
 export class RoomManager {
   private rooms = new Map<string, Room>();
   private pendingDestroy = new Map<string, NodeJS.Timeout>();
   private readonly emptyRoomTtlMs: number;
+  private readonly disconnectGraceMs: number;
+  private sweepTimer: NodeJS.Timeout | null = null;
 
   constructor(private defaults: ManagerOptions = {}) {
     this.emptyRoomTtlMs = defaults.emptyRoomTtlMs ?? 120_000;
+    this.disconnectGraceMs = defaults.disconnectGraceMs ?? 120_000;
+
+    const interval = defaults.sweepIntervalMs ?? 30_000;
+    if (interval > 0) {
+      this.sweepTimer = setInterval(() => this.sweep(), interval);
+      this.sweepTimer.unref?.();
+    }
+  }
+
+  /**
+   * 돌아오지 않는 좌석을 치우고, 그래서 빈 방이 되면 지운다.
+   * 전원이 브라우저를 닫은 방이 영영 남지 않게 하는 장치다.
+   */
+  sweep(): void {
+    for (const [id, room] of [...this.rooms]) {
+      const empty = room.sweepDisconnected(this.disconnectGraceMs);
+      if (empty) {
+        room.dispose();
+        this.rooms.delete(id);
+        this.clearPendingDestroy(id);
+      }
+    }
+  }
+
+  private clearPendingDestroy(id: string): void {
+    const t = this.pendingDestroy.get(id);
+    if (t) clearTimeout(t);
+    this.pendingDestroy.delete(id);
   }
 
   create(hostId: string, opts: RoomOptions = {}): Room {
@@ -57,6 +91,8 @@ export class RoomManager {
 
   /** 서버를 내릴 때 타이머를 정리한다. */
   dispose(): void {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+    this.sweepTimer = null;
     for (const t of this.pendingDestroy.values()) clearTimeout(t);
     this.pendingDestroy.clear();
     for (const room of this.rooms.values()) room.dispose();

@@ -48,6 +48,10 @@ export interface Player {
   eliminated: boolean;
   /** 탈락 순서. 순위를 매길 때 나중에 탈락한 사람이 위 */
   eliminatedAt: number | null;
+  /** 테이블에서 내려와 구경만 하는 중 (중도 퇴장 또는 탈락) */
+  spectating: boolean;
+  /** 접속이 끊긴 시각. 오래 돌아오지 않으면 좌석을 정리한다 */
+  disconnectedAt: number | null;
   lastAction: ActionType | null;
 }
 
@@ -114,6 +118,8 @@ export class Room {
   levelEndsAt: number | null = null;
   onBreak = false;
   finished = false;
+  /** 첫 핸드가 시작된 시각 */
+  startedAt: number | null = null;
   standings: Standing[] | null = null;
   private breakTaken = false;
   private levelElapsedMs = 0;
@@ -170,6 +176,7 @@ export class Room {
       endsAt: this.levelEndsAt,
       onBreak: this.onBreak,
       finished: this.finished,
+      startedAt: this.startedAt,
     };
   }
 
@@ -270,6 +277,7 @@ export class Room {
     if (existing) {
       existing.socketId = socketId;
       existing.connected = true;
+      existing.disconnectedAt = null;
       existing.name = name;
       return existing;
     }
@@ -297,6 +305,8 @@ export class Room {
       buyinsUsed: 1,
       eliminated: false,
       eliminatedAt: null,
+      spectating: false,
+      disconnectedAt: null,
       lastAction: null,
     };
     this.players.push(player);
@@ -335,6 +345,7 @@ export class Room {
     if (!p) return null;
     p.connected = false;
     p.socketId = null;
+    p.disconnectedAt = Date.now();
     return p;
   }
 
@@ -346,7 +357,9 @@ export class Room {
 
   /** 이번 핸드에 참여 가능한 사람 */
   private eligibleForHand(): Player[] {
-    return this.players.filter((p) => p.chips > 0 && !p.eliminated);
+    return this.players.filter(
+      (p) => p.chips > 0 && !p.eliminated && !p.spectating
+    );
   }
 
   startHand(): void {
@@ -367,6 +380,7 @@ export class Room {
     }
 
     this.startClockIfNeeded();
+    this.startedAt ??= Date.now();
 
     this.handNumber++;
     this.revealed.clear();
@@ -383,7 +397,7 @@ export class Room {
       p.hasActed = false;
       p.raiseLocked = false;
       p.lastAction = null;
-      p.sittingOut = p.chips <= 0 || p.eliminated;
+      p.sittingOut = p.chips <= 0 || p.eliminated || p.spectating;
       p.inHand = !p.sittingOut;
     }
 
@@ -721,7 +735,7 @@ export class Room {
       if (p.chips > 0) continue;
       p.sittingOut = true;
       // 리바인이 남아 있으면 아직 탈락이 아니다 — 리바인을 기다린다
-      if (!p.eliminated && this.rebuysLeftFor(p) <= 0) {
+      if (!p.eliminated && !p.spectating && this.rebuysLeftFor(p) <= 0) {
         p.eliminated = true;
         p.eliminatedAt = ++this.eliminationCounter;
         this.emitter.log(`${p.name} 님 탈락`);
@@ -729,7 +743,7 @@ export class Room {
     }
 
     const survivors = this.players.filter(
-      (p) => !p.eliminated && (p.chips > 0 || this.rebuysLeftFor(p) > 0)
+      (p) => !p.eliminated && !p.spectating && (p.chips > 0 || this.rebuysLeftFor(p) > 0)
     );
     if (survivors.length <= 1 && this.players.length > 1) {
       this.emitter.showdown({ ...result, nextHandAt: null });
@@ -753,6 +767,74 @@ export class Room {
     } else {
       this.emitter.log("리바인을 기다리는 중입니다.");
     }
+  }
+
+  // -------------------------------------------------------- 중도 퇴장 / 관전
+
+  /**
+   * 테이블에서 내려온다. 남은 칩은 사라진다(번칩).
+   * 관전자가 되어 계속 보고 채팅할 수 있고, 리바인이 남았으면 다시 들어올 수 있다.
+   */
+  leaveTable(playerId: string): void {
+    const p = this.players.find((x) => x.id === playerId);
+    if (!p) throw new Error("좌석을 찾을 수 없습니다");
+    if (p.spectating) throw new Error("이미 관전 중입니다");
+
+    const burned = p.chips;
+    p.chips = 0;
+    p.spectating = true;
+    p.sittingOut = true;
+
+    // 핸드 진행 중이었다면 폴드 처리하고 차례를 넘긴다
+    const wasInHand = p.inHand && !p.folded && this.handLive;
+    if (wasInHand) this.applyFold(p);
+
+    this.emitter.log(
+      burned > 0
+        ? `${p.name} 님이 테이블에서 내려갔습니다 (칩 ${burned.toLocaleString()} 소멸)`
+        : `${p.name} 님이 테이블에서 내려갔습니다`
+    );
+
+    if (wasInHand) this.advance();
+    else this.emitter.state();
+  }
+
+  /** 관전자를 포함해 방에 남아 있는 사람 수 */
+  get occupantCount(): number {
+    return this.players.length;
+  }
+
+  /**
+   * 돌아오지 않는 좌석을 정리한다. 정리 후 방이 비었으면 true.
+   * 이게 없으면 전원이 브라우저를 닫은 방이 영영 남는다.
+   */
+  sweepDisconnected(graceMs: number): boolean {
+    const cutoff = Date.now() - graceMs;
+    // <= 로 비교해야 graceMs가 0일 때 "즉시 정리"가 된다
+    const gone = this.players.filter(
+      (p) => !p.connected && p.disconnectedAt !== null && p.disconnectedAt <= cutoff
+    );
+    for (const p of gone) {
+      this.emitter.log(`${p.name} 님이 오래 돌아오지 않아 자리를 정리했습니다`);
+      p.leaving = true;
+    }
+    if (gone.length === 0) return this.players.length === 0;
+
+    if (this.handLive) {
+      // 핸드 중이면 폴드만 시키고 좌석은 finishHand가 정리한다
+      for (const p of gone) if (p.inHand && !p.folded) this.applyFold(p);
+      this.advance();
+    } else {
+      this.players = this.players.filter((p) => !p.leaving);
+      if (this.dealerIndex >= this.players.length) {
+        this.dealerIndex = this.players.length - 1;
+      }
+      if (this.hostId && !this.players.some((p) => p.id === this.hostId)) {
+        if (this.players[0]) this.hostId = this.players[0].id;
+      }
+      this.emitter.state();
+    }
+    return this.players.length === 0;
   }
 
   // ------------------------------------------------------------------ 리바인
@@ -789,6 +871,7 @@ export class Room {
     p.buyinsUsed++;
     p.chips = this.preset.rebuyChips;
     p.sittingOut = false;
+    p.spectating = false;
     this.emitter.log(
       `${p.name} 님 리바인 (+${p.chips.toLocaleString()}, 남은 횟수 ${this.rebuysLeftFor(p)})`
     );
@@ -974,6 +1057,7 @@ export class Room {
         lastAction: p.lastAction,
         rebuysLeft: this.rebuysLeftFor(p),
         eliminated: p.eliminated,
+        spectating: p.spectating,
       };
     });
 

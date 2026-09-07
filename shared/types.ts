@@ -33,6 +33,8 @@ export interface ClockState {
   endsAt: number | null;
   onBreak: boolean;
   finished: boolean;
+  /** 첫 핸드가 시작된 시각(epoch ms). 아직 안 시작했으면 null */
+  startedAt: number | null;
 }
 
 export interface Standing {
@@ -103,6 +105,11 @@ export interface PublicPlayer {
   rebuysLeft: number;
   /** 칩이 0이고 리바인도 남지 않아 탈락 */
   eliminated: boolean;
+  /**
+   * 테이블에서 내려와 구경만 하는 중.
+   * 중도 퇴장했거나 탈락한 경우다. 좌석은 비어 있는 것으로 그린다.
+   */
+  spectating: boolean;
 }
 
 export interface PotView {
@@ -173,6 +180,18 @@ export interface ChatOrLogEntry {
   at: number;
 }
 
+export interface ChatMessage {
+  playerId: string;
+  name: string;
+  text: string;
+  at: number;
+  /** 관전자가 보낸 메시지인지 */
+  spectator: boolean;
+}
+
+/** 채팅 한 줄의 최대 길이 */
+export const CHAT_MAX_LENGTH = 200;
+
 /** 클라이언트 → 서버 */
 export interface ClientToServerEvents {
   "room:create": (
@@ -187,6 +206,9 @@ export interface ClientToServerEvents {
   "room:start": (cb: (r: Ack<null>) => void) => void;
   "player:action": (p: PlayerAction, cb: (r: Ack<null>) => void) => void;
   "player:rebuy": (cb: (r: Ack<null>) => void) => void;
+  /** 테이블에서 내려온다. 남은 칩은 사라지고 관전자가 된다. */
+  "table:leave": (cb: (r: Ack<null>) => void) => void;
+  "chat:send": (p: { text: string }, cb: (r: Ack<null>) => void) => void;
 }
 
 /** 서버 → 클라이언트 */
@@ -201,6 +223,7 @@ export interface ServerToClientEvents {
   /** 레벨 상승, 브레이크 시작/종료, 게임 종료 */
   "clock:update": (c: ClockState) => void;
   "game:finished": (p: { standings: Standing[] }) => void;
+  "chat:message": (m: ChatMessage) => void;
 }
 
 export type Ack<T> =

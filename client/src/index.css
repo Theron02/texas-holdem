@@ -123,7 +123,8 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .room-code-copy { font-size: 11px; color: var(--muted); }
 
 .stage { flex: 1; display: grid; place-items: center; padding: 12px; overflow: hidden; }
-.stage-inner { transform-origin: center center; }
+.stage-inner { position: relative; }
+.stage-scale { transform-origin: top left; }
 
 .bottombar {
   border-top: 1px solid var(--line);
@@ -342,15 +343,6 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .result li.win b { color: var(--gold); }
 .result-next { margin: 9px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
 
-.log {
-  position: fixed; right: 12px; bottom: 108px;
-  width: 220px; max-height: 176px; overflow-y: auto;
-  background: rgba(10, 16, 20, 0.72);
-  border: 1px solid var(--line); border-radius: 10px;
-  padding: 8px 10px; font-size: 11px; color: var(--muted);
-  display: flex; flex-direction: column; gap: 3px;
-}
-.log-line { line-height: 1.45; }
 
 .toast {
   position: fixed; left: 50%; bottom: 108px; transform: translateX(-50%);
@@ -358,10 +350,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   padding: 9px 16px; border-radius: 9px; font-size: 13px; z-index: 30;
 }
 
-@media (max-width: 720px) {
-  .log { display: none; }
-  .topbar-info { display: none; }
-}
+
 
 /* ------------------------------------------------- 모드 선택 / 시계 / 리바인 */
 
@@ -427,4 +416,126 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 
 @media (max-width: 720px) {
   .clock-blinds { display: none; }
+}
+
+/* ------------------------------------------------------- 채팅 / 관전 / 메뉴 */
+
+.chat {
+  position: fixed; right: 12px; bottom: 12px;
+  width: 260px; z-index: 25;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+}
+.chat-toggle {
+  position: relative;
+  background: #121a1f; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 8px; padding: 6px 12px; font-size: 12px;
+}
+.chat-toggle:hover { color: var(--text); border-color: var(--gold); }
+.chat-badge {
+  position: absolute; top: -6px; right: -6px;
+  background: var(--gold); color: #21170a;
+  border-radius: 9px; min-width: 17px; height: 17px;
+  font-size: 10px; font-weight: 700;
+  display: grid; place-items: center; padding: 0 4px;
+}
+.chat-open { width: 280px; }
+.chat-scroll {
+  width: 100%; max-height: 240px; overflow-y: auto;
+  background: rgba(10, 16, 20, 0.9);
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.chat-empty { margin: 0; font-size: 11px; color: var(--muted); }
+.chat-log { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.chat-line { font-size: 12px; line-height: 1.45; display: flex; gap: 6px; }
+.chat-line b { color: var(--gold); flex: none; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-line.mine b { color: #7fc9a4; }
+.chat-line span { word-break: break-word; }
+.chat-spec { font-style: normal; font-size: 9px; color: var(--muted); margin-left: 3px; }
+.chat-input { display: flex; gap: 6px; width: 100%; }
+.chat-input input {
+  flex: 1; min-width: 0;
+  background: #0e1418; border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; outline: none;
+}
+.chat-input input:focus { border-color: var(--gold); }
+.chat-input .btn { padding: 8px 12px; font-size: 12px; }
+
+.spectators {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 16px; border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--muted);
+  overflow-x: auto;
+}
+.spectators-label { flex: none; color: var(--gold); font-weight: 600; }
+.spectators-list { display: flex; gap: 6px; }
+.spectator-chip {
+  flex: none;
+  background: #141b20; border: 1px solid var(--line);
+  border-radius: 20px; padding: 3px 10px;
+  display: flex; align-items: center; gap: 5px;
+}
+.spectator-chip em { font-style: normal; font-size: 9px; color: var(--gold); }
+
+.menu { position: relative; }
+.menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 5px; z-index: 40;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 190px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+.menu-pop button {
+  background: transparent; border: none; color: var(--text);
+  text-align: left; padding: 8px 10px; border-radius: 7px;
+  font-size: 13px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.menu-pop button:hover { background: #1e272e; }
+.menu-pop em { font-style: normal; font-size: 10px; color: var(--muted); }
+
+.unit-toggle {
+  background: #121a1f; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 600;
+}
+.unit-toggle:hover { color: var(--gold); border-color: var(--gold); }
+
+.clock-elapsed {
+  font-size: 11px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-left: 8px; border-left: 1px solid var(--line);
+}
+
+/* --------------------------------------------------------------- 모바일 */
+
+@media (max-width: 760px) {
+  .topbar { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
+  .room-code-label, .room-code-copy { display: none; }
+  .room-code-value { font-size: 15px; letter-spacing: 0.12em; }
+  .topbar-info { gap: 8px; }
+  .clock { padding: 3px 8px; gap: 6px; }
+  .clock-blinds { font-size: 11px; }
+  .clock-ante { display: none; }
+
+  .stage { padding: 4px; }
+  .bottombar { padding: 8px 10px 14px; min-height: 84px; }
+
+  /* 터치 목표를 키운다 */
+  .action-buttons { gap: 7px; }
+  .action-buttons .btn { padding: 15px 8px; font-size: 15px; }
+  .preset { padding: 7px 12px; font-size: 13px; }
+  .raise-slider input { height: 26px; }
+
+  .actionbar { width: 100%; }
+  .spectators { padding: 5px 10px; }
+
+  /* 채팅 버튼이 액션 버튼을 가리면 안 된다 — 상단 빈 공간으로 옮긴다 */
+  .chat { right: 8px; bottom: auto; top: 52px; width: auto; }
+  .chat-open { width: calc(100vw - 16px); }
+  .chat-scroll { max-height: 44vh; }
+
+  .result { top: 64px; min-width: 0; width: calc(100vw - 24px); padding: 12px 14px; }
+  .menu-pop { min-width: 170px; }
 }

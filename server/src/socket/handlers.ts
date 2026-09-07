@@ -1,8 +1,9 @@
 import type { Server, Socket } from "socket.io";
-import type {
-  Ack,
-  ClientToServerEvents,
-  ServerToClientEvents,
+import {
+  CHAT_MAX_LENGTH,
+  type Ack,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
 } from "../../../shared/types.ts";
 import type { Room } from "../game/room.ts";
 import type { RoomManager } from "../game/roomManager.ts";
@@ -123,6 +124,38 @@ export function registerHandlers(io: IO, manager: RoomManager): void {
       } catch (e) {
         cb(fail(errText(e)));
       }
+    });
+
+    socket.on("table:leave", (cb) => {
+      const room = manager.get(socket.data.roomId ?? "");
+      if (!room) return cb(fail("방에 들어와 있지 않습니다"));
+      try {
+        room.leaveTable(socket.data.playerId);
+        cb({ ok: true, data: null });
+      } catch (e) {
+        cb(fail(errText(e)));
+      }
+    });
+
+    socket.on("chat:send", ({ text }, cb) => {
+      const room = manager.get(socket.data.roomId ?? "");
+      if (!room) return cb(fail("방에 들어와 있지 않습니다"));
+      const trimmed = (text ?? "").trim();
+      if (!trimmed) return cb(fail("빈 메시지는 보낼 수 없습니다"));
+      if (trimmed.length > CHAT_MAX_LENGTH) {
+        return cb(fail(`메시지는 ${CHAT_MAX_LENGTH}자까지입니다`));
+      }
+      const p = room.players.find((x) => x.id === socket.data.playerId);
+      if (!p) return cb(fail("좌석을 찾을 수 없습니다"));
+
+      io.to(room.id).emit("chat:message", {
+        playerId: p.id,
+        name: p.name,
+        text: trimmed,
+        at: Date.now(),
+        spectator: p.spectating,
+      });
+      cb({ ok: true, data: null });
     });
 
     socket.on("room:leave", () => {

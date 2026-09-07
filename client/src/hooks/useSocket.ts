@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import type {
   Ack,
+  ChatMessage,
   ChatOrLogEntry,
   GameMode,
   PlayerAction,
@@ -34,6 +35,7 @@ export interface HoldemConnection {
   connected: boolean;
   state: RoomState | null;
   logs: ChatOrLogEntry[];
+  chat: ChatMessage[];
   showdown: ShowdownResult | null;
   /** 새 핸드가 시작될 때 잠깐 true — 셔플 연출용 */
   shuffling: boolean;
@@ -43,6 +45,8 @@ export interface HoldemConnection {
   startHand: () => void;
   act: (action: PlayerAction) => void;
   rebuy: () => void;
+  leaveTable: () => void;
+  sendChat: (text: string) => void;
   leave: () => void;
   standings: Standing[] | null;
 }
@@ -52,6 +56,7 @@ export function useHoldem(): HoldemConnection {
   const [connected, setConnected] = useState(false);
   const [state, setState] = useState<RoomState | null>(null);
   const [logs, setLogs] = useState<ChatOrLogEntry[]>([]);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
   const [showdown, setShowdown] = useState<ShowdownResult | null>(null);
   const [shuffling, setShuffling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +83,7 @@ export function useHoldem(): HoldemConnection {
             setState(null);
             setShowdown(null);
             setLogs([]);
+            setChat([]);
             setError("방이 사라졌습니다. 다시 입장해 주세요.");
           }
         );
@@ -101,7 +107,10 @@ export function useHoldem(): HoldemConnection {
       setShowdown(null);
     });
     socket.on("room:log", (e: ChatOrLogEntry) =>
-      setLogs((cur) => [...cur.slice(-40), e])
+      setLogs((cur) => [...cur.slice(-60), e])
+    );
+    socket.on("chat:message", (m: ChatMessage) =>
+      setChat((cur) => [...cur.slice(-100), m])
     );
 
     return () => {
@@ -157,6 +166,17 @@ export function useHoldem(): HoldemConnection {
     socketRef.current?.emit("player:rebuy", handle);
   }, [handle]);
 
+  const leaveTable = useCallback(() => {
+    socketRef.current?.emit("table:leave", handle);
+  }, [handle]);
+
+  const sendChat = useCallback(
+    (text: string) => {
+      socketRef.current?.emit("chat:send", { text }, handle);
+    },
+    [handle]
+  );
+
   const leave = useCallback(() => {
     socketRef.current?.emit("room:leave");
     rejoinRef.current = null;
@@ -164,10 +184,11 @@ export function useHoldem(): HoldemConnection {
     setShowdown(null);
     setStandings(null);
     setLogs([]);
+    setChat([]);
   }, []);
 
   return {
-    connected, state, logs, showdown, shuffling, error, standings,
-    createRoom, joinRoom, startHand, act, rebuy, leave,
+    connected, state, logs, chat, showdown, shuffling, error, standings,
+    createRoom, joinRoom, startHand, act, rebuy, leaveTable, sendChat, leave,
   };
 }

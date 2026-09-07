@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { io as connect, type Socket } from "socket.io-client";
-import type { Ack, Card, RoomState } from "../../../shared/types.ts";
+import type { Ack, Card, ChatMessage, RoomState } from "../../../shared/types.ts";
 import { createGameServer, type GameServer } from "../server.ts";
 
 let server: GameServer;
@@ -31,6 +31,7 @@ class TestClient {
   hole: Card[] | null = null;
   /** 이 소켓이 받은 모든 room:state의 원본 JSON — 카드 유출 검사용 */
   rawStates: string[] = [];
+  chat: ChatMessage[] = [];
 
   constructor(readonly playerId: string, readonly name: string, port: number) {
     this.socket = connect(`http://localhost:${port}`, { transports: ["websocket"] });
@@ -40,6 +41,9 @@ class TestClient {
     });
     this.socket.on("deal:hole", (p: { cards: Card[] }) => {
       this.hole = p.cards;
+    });
+    this.socket.on("chat:message", (m: unknown) => {
+      this.chat.push(m as ChatMessage);
     });
   }
 
@@ -315,6 +319,92 @@ describe("소켓 통합", () => {
     await c.waitFor(() => c.state !== null, "상태");
     const res = await c.emit("player:rebuy");
     assert.equal(res.ok, false);
+  });
+
+  it("채팅이 같은 방 전원에게 전달된다", async (t) => {
+    const open: TestClient[] = [];
+    t.after(() => open.forEach((c) => c.close()));
+
+    const host = new TestClient("ch1", "지수", port);
+    open.push(host);
+    const r = await host.emit<{ roomId: string }>("room:create", {
+      name: "지수", playerId: "ch1", mode: "tournament",
+    });
+    const roomId = (r as { ok: true; data: { roomId: string } }).data.roomId;
+    const guest = new TestClient("ch2", "민준", port);
+    open.push(guest);
+    await guest.emit("room:join", { roomId, name: "민준", playerId: "ch2" });
+    await host.waitFor(() => (host.state?.players.length ?? 0) === 2, "입장");
+
+    const res = await host.emit("chat:send", { text: "  안녕하세요  " });
+    assert.equal(res.ok, true);
+
+    await guest.waitFor(() => guest.chat.length > 0, "상대가 채팅 수신");
+    const msg = guest.chat[0]!;
+    assert.equal(msg.text, "안녕하세요", "앞뒤 공백은 다듬는다");
+    assert.equal(msg.name, "지수");
+    assert.equal(msg.playerId, "ch1");
+    assert.equal(msg.spectator, false);
+    await host.waitFor(() => host.chat.length > 0, "보낸 사람도 받는다");
+  });
+
+  it("빈 메시지와 너무 긴 메시지는 거부된다", async (t) => {
+    const c = new TestClient("ch9", "지수", port);
+    t.after(() => c.close());
+    await c.emit("room:create", { name: "지수", playerId: "ch9", mode: "tournament" });
+    await c.waitFor(() => c.state !== null, "상태");
+
+    assert.equal((await c.emit("chat:send", { text: "   " })).ok, false);
+    const long = await c.emit("chat:send", { text: "가".repeat(201) });
+    assert.equal(long.ok, false);
+    assert.equal((await c.emit("chat:send", { text: "가".repeat(200) })).ok, true);
+  });
+
+  it("테이블에서 내려가면 관전자가 되고 채팅에 표시된다", async (t) => {
+    const open: TestClient[] = [];
+    t.after(() => open.forEach((c) => c.close()));
+
+    const host = new TestClient("sp1", "지수", port);
+    open.push(host);
+    const r = await host.emit<{ roomId: string }>("room:create", {
+      name: "지수", playerId: "sp1", mode: "tournament",
+    });
+    const roomId = (r as { ok: true; data: { roomId: string } }).data.roomId;
+    const guest = new TestClient("sp2", "민준", port);
+    open.push(guest);
+    await guest.emit("room:join", { roomId, name: "민준", playerId: "sp2" });
+    await host.waitFor(() => (host.state?.players.length ?? 0) === 2, "입장");
+
+    assert.equal((await guest.emit("table:leave")).ok, true);
+    await host.waitFor(
+      () => host.state!.players.find((p) => p.id === "sp2")?.spectating === true,
+      "관전 상태 반영"
+    );
+    const seen = host.state!.players.find((p) => p.id === "sp2")!;
+    assert.equal(seen.chips, 0, "남은 칩은 사라진다");
+
+    await guest.emit("chat:send", { text: "잘 치세요" });
+    await host.waitFor(() => host.chat.length > 0, "관전자 채팅 수신");
+    assert.equal(host.chat[0]!.spectator, true, "관전자 표시가 붙는다");
+  });
+
+  it("관전자는 리바인해서 테이블로 돌아온다", async (t) => {
+    const open: TestClient[] = [];
+    t.after(() => open.forEach((c) => c.close()));
+
+    const host = new TestClient("rb9", "지수", port);
+    open.push(host);
+    await host.emit("room:create", { name: "지수", playerId: "rb9", mode: "tournament" });
+    await host.waitFor(() => host.state !== null, "상태");
+
+    assert.equal((await host.emit("table:leave")).ok, true);
+    await host.waitFor(() => host.state?.canRebuy === true, "리바인 가능");
+
+    assert.equal((await host.emit("player:rebuy")).ok, true);
+    await host.waitFor(
+      () => host.state!.players.find((p) => p.id === "rb9")?.spectating === false,
+      "테이블 복귀"
+    );
   });
 
   it("차례가 아닌 사람의 액션은 거부된다", async () => {

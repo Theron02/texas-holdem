@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { PublicPlayer, RoomState } from "../../../shared/types.ts";
-import { DECK_POS } from "../layout.ts";
+import { formatChips, type ChipUnit } from "../format.ts";
+import type { TableLayout } from "../layout.ts";
 import Card from "./Card.tsx";
 
 interface Props {
@@ -13,6 +14,9 @@ interface Props {
   phase: RoomState["phase"];
   /** 남은 시간 비율 0~1. 내 차례 표시용 */
   turnRatio: number | null;
+  layout: TableLayout;
+  unit: ChipUnit;
+  bigBlind: number;
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -31,11 +35,14 @@ export default function PlayerSeat({
   dealIndex,
   phase,
   turnRatio,
+  layout,
+  unit,
+  bigBlind,
 }: Props) {
   const dealing = phase !== "waiting";
   const dealFrom = {
-    x: DECK_POS.x - pos.x,
-    y: DECK_POS.y - pos.y,
+    x: layout.deck.x - pos.x,
+    y: layout.deck.y - pos.y,
   };
 
   return (
@@ -89,7 +96,7 @@ export default function PlayerSeat({
           ) : player.eliminated ? (
             <span className="seat-busted">OUT</span>
           ) : (
-            player.chips.toLocaleString()
+            formatChips(player.chips, unit, bigBlind)
           )}
           {player.chips === 0 && !player.eliminated && player.rebuysLeft > 0 && (
             <span className="seat-rebuy">리바인 {player.rebuysLeft}</span>
@@ -120,7 +127,7 @@ export default function PlayerSeat({
             exit={{ opacity: 0, scale: 0.5 }}
           >
             <span className="chip chip-bet" />
-            {player.bet.toLocaleString()}
+            {formatChips(player.bet, unit, bigBlind)}
           </motion.div>
         )}
       </AnimatePresence>

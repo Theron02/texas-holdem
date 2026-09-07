@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import type { LegalActions, PlayerAction } from "../../../shared/types.ts";
+import { formatChips, type ChipUnit } from "../format.ts";
 
 interface Props {
   legal: LegalActions;
   bigBlind: number;
   pot: number;
+  unit: ChipUnit;
   onAction: (a: PlayerAction) => void;
   disabled?: boolean;
 }
 
-export default function ActionBar({ legal, bigBlind, pot, onAction, disabled }: Props) {
+export default function ActionBar({
+  legal, bigBlind, pot, unit, onAction, disabled,
+}: Props) {
+  const fmt = (n: number) => formatChips(n, unit, bigBlind);
   const [raiseTo, setRaiseTo] = useState(legal.minRaiseTo);
 
   // 차례가 새로 오면 슬라이더를 최소 레이즈로 되돌린다
@@ -61,7 +66,7 @@ export default function ActionBar({ legal, bigBlind, pot, onAction, disabled }: 
               disabled={disabled || !canSlide}
               onChange={(e) => setRaiseTo(clamp(Number(e.target.value)))}
             />
-            <output>{raiseTo.toLocaleString()}</output>
+            <output>{fmt(raiseTo)}</output>
           </div>
         </div>
       )}
@@ -92,7 +97,7 @@ export default function ActionBar({ legal, bigBlind, pot, onAction, disabled }: 
             disabled={disabled || !legal.canCall}
             onClick={() => onAction({ type: "call" })}
           >
-            콜 {legal.callAmount.toLocaleString()}
+            콜 {fmt(legal.callAmount)}
           </button>
         )}
 
@@ -109,7 +114,7 @@ export default function ActionBar({ legal, bigBlind, pot, onAction, disabled }: 
               )
             }
           >
-            {isAllInRaise ? "올인" : `레이즈 ${raiseTo.toLocaleString()}`}
+            {isAllInRaise ? "올인" : `레이즈 ${fmt(raiseTo)}`}
           </button>
         ) : (
           <button

@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { RoomState } from "../../../shared/types.ts";
-import { DECK_POS, POT_POS, seatPos, TABLE_H, TABLE_W } from "../layout.ts";
+import type { ChipUnit } from "../format.ts";
+import type { TableLayout } from "../layout.ts";
 import Card from "./Card.tsx";
 import PlayerSeat from "./PlayerSeat.tsx";
 import Pot from "./Pot.tsx";
@@ -10,38 +11,38 @@ import ShuffleAnimation from "./ShuffleAnimation.tsx";
 interface FlyingChip {
   key: number;
   from: { x: number; y: number };
-  amount: number;
 }
-
-const COMMUNITY_Y = TABLE_H / 2 - 30;
-const COMMUNITY_STEP = 86;
 
 interface Props {
   state: RoomState;
   shuffling: boolean;
+  layout: TableLayout;
+  unit: ChipUnit;
 }
 
-export default function Table({ state, shuffling }: Props) {
-  // 나를 항상 화면 아래(좌석 0번)에 두고 나머지를 시계 방향으로 돌린다
-  const meIndex = Math.max(0, state.players.findIndex((p) => p.id === state.youId));
-  const ordered = [
-    ...state.players.slice(meIndex),
-    ...state.players.slice(0, meIndex),
-  ];
+export default function Table({ state, shuffling, layout, unit }: Props) {
+  const bb = state.clock.bigBlind || state.bigBlind;
 
-  const chips = useBetCollectionChips(state, ordered);
+  // 관전자는 테이블에 앉히지 않는다 — 자리를 차지하면 좌석 배치가 헐거워진다
+  const seated = state.players.filter((p) => !p.spectating);
+  // 나를 항상 화면 아래(좌석 0번)에 두고 나머지를 시계 방향으로 돌린다
+  const meIndex = Math.max(0, seated.findIndex((p) => p.id === state.youId));
+  const ordered = [...seated.slice(meIndex), ...seated.slice(0, meIndex)];
+  const seatCount = Math.max(ordered.length, 2);
+
+  const chips = useBetCollectionChips(state, ordered, layout, seatCount);
   const turnRatio = useTurnRatio(state);
 
   return (
     <div className="table-wrap">
-      <div className="table" style={{ width: TABLE_W, height: TABLE_H }}>
+      <div className="table" style={{ width: layout.width, height: layout.height }}>
         <div className="table-felt" />
 
         {/* 커뮤니티 카드가 깔리기 시작하면 덱은 치운다 — 같은 자리를 두고 겹친다. */}
         {state.communityCards.length === 0 && (
           <motion.div
             className="deck"
-            style={{ left: DECK_POS.x, top: DECK_POS.y }}
+            style={{ left: layout.deck.x, top: layout.deck.y }}
             exit={{ opacity: 0 }}
           >
             <span className="deck-card" />
@@ -50,7 +51,7 @@ export default function Table({ state, shuffling }: Props) {
           </motion.div>
         )}
 
-        <div className="community" style={{ top: COMMUNITY_Y }}>
+        <div className="community" style={{ top: layout.communityY }}>
           <AnimatePresence>
             {state.communityCards.map((card, i) => (
               <Card
@@ -58,8 +59,8 @@ export default function Table({ state, shuffling }: Props) {
                 card={card}
                 size="lg"
                 dealFrom={{
-                  x: DECK_POS.x - (TABLE_W / 2 + (i - 2) * COMMUNITY_STEP),
-                  y: DECK_POS.y - COMMUNITY_Y,
+                  x: layout.deck.x - (layout.width / 2 + (i - 2) * layout.communityStep),
+                  y: layout.deck.y - layout.communityY,
                 }}
                 delay={(i % 3) * 0.14}
               />
@@ -67,23 +68,23 @@ export default function Table({ state, shuffling }: Props) {
           </AnimatePresence>
         </div>
 
-        <Pot total={state.totalPot} pots={state.pots} />
+        <Pot total={state.totalPot} pots={state.pots} layout={layout} unit={unit} bigBlind={bb} />
 
-        {ordered.map((player, i) => {
-          const pos = seatPos(i, Math.max(ordered.length, 2));
-          return (
-            <PlayerSeat
-              key={player.id}
-              player={player}
-              pos={pos}
-              isSelf={player.id === state.youId}
-              isTurn={state.currentTurn === player.id}
-              dealIndex={i}
-              phase={state.phase}
-              turnRatio={state.currentTurn === player.id ? turnRatio : null}
-            />
-          );
-        })}
+        {ordered.map((player, i) => (
+          <PlayerSeat
+            key={player.id}
+            player={player}
+            pos={layout.seatPos(i, seatCount)}
+            isSelf={player.id === state.youId}
+            isTurn={state.currentTurn === player.id}
+            dealIndex={i}
+            phase={state.phase}
+            turnRatio={state.currentTurn === player.id ? turnRatio : null}
+            layout={layout}
+            unit={unit}
+            bigBlind={bb}
+          />
+        ))}
 
         {/* 베팅이 팟으로 모이는 순간에만 잠깐 나타나는 칩 */}
         <AnimatePresence>
@@ -92,7 +93,7 @@ export default function Table({ state, shuffling }: Props) {
               key={c.key}
               className="flying-chip"
               initial={{ left: c.from.x, top: c.from.y, opacity: 1, scale: 1 }}
-              animate={{ left: POT_POS.x, top: POT_POS.y, opacity: 0, scale: 0.7 }}
+              animate={{ left: layout.pot.x, top: layout.pot.y, opacity: 0, scale: 0.7 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.55, ease: "easeInOut" }}
             >
@@ -101,7 +102,7 @@ export default function Table({ state, shuffling }: Props) {
           ))}
         </AnimatePresence>
 
-        {shuffling && <ShuffleAnimation x={DECK_POS.x} y={DECK_POS.y} />}
+        {shuffling && <ShuffleAnimation x={layout.deck.x} y={layout.deck.y} />}
       </div>
     </div>
   );
@@ -110,7 +111,9 @@ export default function Table({ state, shuffling }: Props) {
 /** 라운드가 끝나 베팅이 0으로 리셋되는 순간을 잡아 좌석→팟 칩 이동을 만든다. */
 function useBetCollectionChips(
   state: RoomState,
-  ordered: RoomState["players"]
+  ordered: RoomState["players"],
+  layout: TableLayout,
+  seatCount: number
 ): FlyingChip[] {
   const [chips, setChips] = useState<FlyingChip[]>([]);
   const prevBets = useRef(new Map<string, number>());
@@ -121,11 +124,7 @@ function useBetCollectionChips(
     ordered.forEach((p, i) => {
       const before = prevBets.current.get(p.id) ?? 0;
       if (before > 0 && p.bet === 0) {
-        collected.push({
-          key: nextKey.current++,
-          from: seatPos(i, Math.max(ordered.length, 2)),
-          amount: before,
-        });
+        collected.push({ key: nextKey.current++, from: layout.seatPos(i, seatCount) });
       }
       prevBets.current.set(p.id, p.bet);
     });
@@ -136,7 +135,7 @@ function useBetCollectionChips(
       600
     );
     return () => clearTimeout(t);
-  }, [state, ordered]);
+  }, [state, ordered, layout, seatCount]);
 
   return chips;
 }
