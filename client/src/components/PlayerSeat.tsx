@@ -17,6 +17,8 @@ interface Props {
   layout: TableLayout;
   unit: ChipUnit;
   bigBlind: number;
+  /** 이웃 좌석과 겹치지 않도록 계산된 배율 */
+  seatScale: number;
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -38,6 +40,7 @@ export default function PlayerSeat({
   layout,
   unit,
   bigBlind,
+  seatScale,
 }: Props) {
   const dealing = phase !== "waiting";
   const dealFrom = {
@@ -56,7 +59,13 @@ export default function PlayerSeat({
         player.sittingOut ? "seat-out" : "",
         player.eliminated ? "seat-eliminated" : "",
       ].join(" ")}
-      style={{ left: pos.x, top: pos.y }}
+      style={{
+        left: pos.x,
+        top: pos.y,
+        ["--seat-w" as string]: `${layout.seatW}px`,
+        ["--seat-h" as string]: `${layout.seatH}px`,
+        transform: `translate(-50%, -50%) scale(${seatScale})`,
+      }}
     >
       <div className="seat-cards">
         <AnimatePresence>
@@ -85,11 +94,28 @@ export default function PlayerSeat({
           </div>
         )}
         <div className="seat-name">
+          <span className="seat-no" title={`${player.seat + 1}번 자리`}>
+            {player.seat + 1}
+          </span>
           {player.isDealer && <span className="dealer-button">D</span>}
           <span className="seat-name-text">{player.name}</span>
           {!player.connected && <span className="seat-badge">접속끊김</span>}
           {player.eliminated && <span className="seat-badge">탈락</span>}
         </div>
+        <AnimatePresence>
+          {player.lastAction && !player.folded && (
+            <motion.span
+              key={`${player.lastAction}-${player.totalBet}`}
+              className="seat-action"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              {ACTION_LABEL[player.lastAction]}
+            </motion.span>
+          )}
+        </AnimatePresence>
+
         <div className="seat-chips">
           {player.allIn ? (
             <span className="seat-allin">ALL IN</span>
@@ -103,20 +129,6 @@ export default function PlayerSeat({
           )}
         </div>
       </div>
-
-      <AnimatePresence>
-        {player.lastAction && !player.folded && (
-          <motion.div
-            key={`${player.lastAction}-${player.totalBet}`}
-            className="seat-action"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-          >
-            {ACTION_LABEL[player.lastAction]}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {player.bet > 0 && (

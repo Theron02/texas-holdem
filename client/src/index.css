@@ -123,8 +123,9 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .room-code-copy { font-size: 11px; color: var(--muted); }
 
 .stage { flex: 1; display: grid; place-items: center; padding: 12px; overflow: hidden; }
+/* 채팅이 열려 있으면 그만큼 비워서 오른쪽 좌석이 가리지 않게 한다 */
+.app-chat-open .stage { padding-right: 300px; }
 .stage-inner { position: relative; }
-.stage-scale { transform-origin: top left; }
 
 .bottombar {
   border-top: 1px solid var(--line);
@@ -228,21 +229,24 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .seat {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 132px;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  width: var(--seat-w, 136px);
+  /* 높이를 고정해야 베팅 칩 유무나 내 좌석 여부로 크기가 흔들리지 않는다.
+     흔들리면 좌석·보드·팟이 겹치지 않게 계산해 둔 자리가 어긋난다. */
+  height: var(--seat-h, 156px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
 }
 .seat-cards { display: flex; gap: 4px; height: 68px; align-items: flex-end; }
 .seat-self .seat-cards { height: 82px; }
 
 .seat-plate {
   position: relative;
-  width: 118px;
+  width: calc(var(--seat-w, 136px) - 10px);
   background: rgba(9, 15, 19, 0.9);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 6px 8px;
   text-align: center;
-  overflow: hidden;
 }
 .seat-turn .seat-plate { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(217, 177, 102, 0.28); }
 .seat-self .seat-plate { border-color: #35505f; }
@@ -251,10 +255,11 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .seat-out .seat-plate { opacity: 0.6; }
 
 .seat-name { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; font-weight: 600; }
+.seat-name-text { color: #cfdde5; }
 .seat-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 74px; }
 .seat-badge { font-size: 9px; color: var(--gold); }
-.seat-chips { font-size: 12px; color: var(--muted); margin-top: 1px; }
-.seat-allin { color: var(--gold); font-weight: 700; font-size: 12px; letter-spacing: 0.08em; }
+.seat-chips { font-size: 15px; color: #eaf2f6; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.seat-allin { color: var(--gold); font-weight: 800; font-size: 13px; letter-spacing: 0.08em; }
 
 .dealer-button {
   width: 17px; height: 17px; flex: none;
@@ -264,27 +269,37 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   display: grid; place-items: center;
 }
 
-.seat-timer { position: absolute; left: 0; top: 0; height: 2px; width: 100%; background: #2a343b; }
+.seat-timer {
+  position: absolute; left: 0; top: 0; height: 2px; width: 100%;
+  background: #2a343b; border-radius: 10px 10px 0 0; overflow: hidden;
+}
 .seat-timer-fill { height: 100%; background: var(--gold); transition: width 0.1s linear; }
 
+/* 좌석 박스 밖으로 나가면 보드 카드와 겹친다. 명패 모서리에 붙여 안쪽에 둔다. */
 .seat-action {
-  position: absolute; top: -18px;
-  background: rgba(0, 0, 0, 0.72);
-  border-radius: 6px; padding: 2px 8px;
-  font-size: 11px; color: var(--gold);
+  position: absolute; top: -9px; right: -2px;
+  background: rgba(0, 0, 0, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 7px;
+  font-size: 11px; font-weight: 600; color: #e7eef3;
+  white-space: nowrap;
 }
 
 .seat-bet {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 12px; font-weight: 600;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 20px; padding: 2px 9px 2px 3px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14px; font-weight: 700;
+  color: var(--gold);
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(217, 177, 102, 0.45);
+  border-radius: 20px; padding: 3px 11px 3px 4px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------------------------------------------------------------- 칩 / 팟 */
 
 .chip {
-  width: 15px; height: 15px; flex: none;
+  width: 17px; height: 17px; flex: none;
   border-radius: 50%;
   background: radial-gradient(circle at 34% 30%, #e35d5d, #a92f2f 68%);
   border: 2px dashed rgba(255, 255, 255, 0.75);
@@ -294,21 +309,27 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 
 .pot {
   position: absolute; transform: translate(-50%, -50%);
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px;
+  pointer-events: none;
 }
-.pot-chips { position: relative; height: 20px; width: 34px; }
-.chip-stack-0 { position: absolute; left: 0; top: 5px; }
-.chip-stack-1 { position: absolute; left: 10px; top: 1px; }
-.chip-stack-2 { position: absolute; left: 19px; top: 6px; }
 .pot-amount {
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(217, 177, 102, 0.4);
-  border-radius: 20px; padding: 3px 14px;
-  font-weight: 700; font-size: 14px; color: var(--gold);
+  display: flex; align-items: center; gap: 7px;
+  max-width: 100%;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(217, 177, 102, 0.55);
+  border-radius: 20px; padding: 4px 13px 4px 5px;
+  font-weight: 800; font-size: 18px; color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
 }
-.pot-side { display: flex; gap: 8px; font-size: 10px; color: #cfe0d6; }
+.pot-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pot-side {
+  display: flex; gap: 8px; font-size: 10px; color: #cfe0d6;
+  max-width: 100%; overflow: hidden; white-space: nowrap;
+}
 
-.flying-chip { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.flying-chip { position: absolute; pointer-events: none; }
 
 /* ---------------------------------------------------------------- 액션바 */
 
@@ -322,14 +343,32 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .preset:hover:not(:disabled) { color: var(--text); border-color: var(--gold); }
 .raise-slider { display: flex; align-items: center; gap: 12px; }
 .raise-slider input { flex: 1; accent-color: var(--gold); }
-.raise-slider output { min-width: 66px; text-align: right; font-weight: 700; color: var(--gold); }
+/* 만 단위 직접 입력 */
+.raise-input {
+  display: flex; align-items: center; gap: 5px;
+  background: #0e1418; border: 1px solid var(--line);
+  border-radius: 9px; padding: 5px 10px;
+  color: var(--gold); font-weight: 700;
+}
+.raise-input:focus-within { border-color: var(--gold); }
+.raise-input input {
+  width: 62px; min-width: 0;
+  background: transparent; border: none; outline: none;
+  color: var(--gold); font: inherit; font-size: 16px;
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.raise-input input::-webkit-outer-spin-button,
+.raise-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.raise-input span { font-size: 13px; color: var(--muted); }
 .action-buttons { display: flex; gap: 9px; width: 100%; }
 .action-buttons .btn { flex: 1; }
 
 /* ---------------------------------------------------------------- 결과 / 로그 */
 
+/* 가운데 정렬은 framer-motion 애니메이션 값(x: -50%)으로 한다.
+   CSS transform에 두면 애니메이션이 덮어써서 화면 밖으로 밀린다. */
 .result {
-  position: fixed; left: 50%; top: 86px; transform: translateX(-50%);
+  position: fixed; left: 50%; top: 86px;
   background: rgba(10, 16, 20, 0.95);
   border: 1px solid var(--gold);
   border-radius: 13px; padding: 14px 20px;
@@ -519,7 +558,25 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   .clock-blinds { font-size: 11px; }
   .clock-ante { display: none; }
 
-  .stage { padding: 4px; }
+  .stage { padding: 2px; }
+
+  /* 화면이 좁아 좌석 간격이 100px 남짓이다 — 좌석을 그보다 작게 줄여야
+     대각선 이웃끼리 모서리가 겹치지 않는다 */
+  /* 좌석 높이 124px 안에 카드·명패·베팅이 모두 들어가야 한다 */
+  .seat-plate { padding: 4px 4px; }
+  .seat-cards { height: 48px; gap: 3px; }
+  .seat-self .seat-cards { height: 59px; }
+  .card-sm { --card-w: 34px; --card-h: 48px; }
+  .card-md { --card-w: 42px; --card-h: 59px; }
+  .seat-name { font-size: 12px; gap: 3px; }
+  .seat-name-text { max-width: 52px; }
+  .seat-chips { font-size: 13px; }
+  .seat-bet { font-size: 12px; padding: 2px 8px 2px 3px; gap: 4px; }
+  .chip { width: 14px; height: 14px; }
+  .seat-no, .dealer-button { width: 14px; height: 14px; font-size: 9px; }
+  .seat-action { font-size: 10px; padding: 1px 5px; top: -8px; }
+  .pot-amount { font-size: 13px; padding: 3px 9px 3px 3px; gap: 4px; }
+  .pot-amount .chip { width: 12px; height: 12px; }
   .bottombar { padding: 8px 10px 14px; min-height: 84px; }
 
   /* 터치 목표를 키운다 */
@@ -538,4 +595,63 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 
   .result { top: 64px; min-width: 0; width: calc(100vw - 24px); padding: 12px 14px; }
   .menu-pop { min-width: 170px; }
+}
+
+/* --------------------------------------------------- 좌석 번호 / 공개 선택 */
+
+.seat-no {
+  width: 15px; height: 15px; flex: none;
+  border-radius: 4px;
+  background: #2a343b; color: var(--muted);
+  font-size: 9px; font-weight: 700;
+  display: grid; place-items: center;
+}
+.seat-self .seat-no { background: #35505f; color: var(--text); }
+
+.show-bar {
+  display: flex; align-items: center; gap: 10px; align-self: center;
+  background: #14181a; border: 1px solid var(--gold);
+  border-radius: 11px; padding: 10px 16px;
+}
+.show-bar p { margin: 0; font-size: 13px; }
+
+@media (max-width: 760px) {
+  .show-bar { width: 100%; justify-content: center; }
+  .show-bar p { font-size: 12px; }
+}
+
+/* ------------------------------------------------------------- 빈 자리 선택 */
+
+.seat-empty {
+  position: absolute;
+  /* 좌석 전체 크기로 그리면 펠트 밖으로 삐져나온다. 명패 정도만 그린다. */
+  width: calc(var(--seat-w, 136px) * 0.82);
+  height: 62px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px;
+  background: rgba(9, 15, 19, 0.42);
+  border: 1px dashed #3b4a55;
+  border-radius: 12px;
+  color: var(--muted);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.seat-empty:hover:not(:disabled) {
+  border-color: var(--gold); color: var(--gold);
+  background: rgba(20, 24, 26, 0.72);
+}
+.seat-empty:disabled { opacity: 0.4; }
+.seat-empty-no {
+  width: 26px; height: 26px;
+  border-radius: 7px; background: #2a343b;
+  font-size: 13px; font-weight: 700;
+  display: grid; place-items: center;
+}
+.seat-empty:hover:not(:disabled) .seat-empty-no { background: var(--gold); color: #21170a; }
+.seat-empty-label { font-size: 11px; }
+
+@media (max-width: 760px) {
+  .seat-empty { gap: 2px; border-radius: 10px; height: 50px; }
+  .seat-empty-no { width: 21px; height: 21px; font-size: 11px; }
+  .seat-empty-label { font-size: 10px; }
+  .raise-input input { width: 54px; font-size: 15px; }
 }

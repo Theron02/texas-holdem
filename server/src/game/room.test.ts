@@ -17,6 +17,7 @@ function makeRoom(names: string[], chips = 1000) {
     community: () => {},
     showdown: () => {},
     log: (t) => logs.push(t),
+    reveal: () => {},
     clock: () => {},
     finished: () => {},
   };
@@ -41,7 +42,8 @@ describe("Room — 핸드 시작과 블라인드", () => {
     const { room } = makeRoom(["A", "B", "C"]);
     room.startHand();
     assert.equal(room.phase, "preflop");
-    assert.equal(room.players[room.dealerIndex]!.id, "p0", "첫 핸드 딜러는 0번 좌석");
+    // 첫 핸드는 가장 높은 번호 좌석에 버튼을 둔다 → 1번 좌석이 스몰블라인드
+    assert.equal(room.players[room.dealerIndex]!.id, "p2", "첫 핸드 딜러는 마지막 좌석");
     assert.equal(room.currentBet, 20);
     // 블라인드 두 명만 칩을 냈다
     const paid = room.players.filter((p) => p.totalBet > 0);

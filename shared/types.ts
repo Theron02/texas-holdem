@@ -134,6 +134,8 @@ export interface RoomState {
   smallBlind: number;
   bigBlind: number;
   handNumber: number;
+  /** 이 방의 좌석 수 (좌석 선택 화면에서 빈 자리를 그린다) */
+  maxPlayers: number;
   /** 이 상태를 받는 사람의 playerId */
   youId: string;
   /** 내 차례가 아니면 null */
@@ -145,6 +147,8 @@ export interface RoomState {
   canRebuy: boolean;
   /** 게임이 끝났을 때의 최종 순위. 진행 중이면 null */
   standings: Standing[] | null;
+  /** 지금 내 카드를 공개할지 고를 수 있는 상태인지 (진 쪽의 선택) */
+  canShowCards: boolean;
 }
 
 export interface HoleCardsPayload {
@@ -167,7 +171,11 @@ export interface Payout {
 }
 
 export interface ShowdownResult {
-  /** 쇼다운까지 간 경우에만 채워진다. 전원 폴드로 끝나면 빈 배열. */
+  /**
+   * 자동으로 공개되는 핸드만 담긴다.
+   * 올인이 없었다면 이긴 핸드만, 올인이 있었다면 겨룬 사람 전원.
+   * 진 사람은 스스로 공개를 선택할 수 있다(showdown:reveal).
+   */
   reveals: ShowdownReveal[];
   payouts: Payout[];
   winners: string[];
@@ -209,6 +217,10 @@ export interface ClientToServerEvents {
   /** 테이블에서 내려온다. 남은 칩은 사라지고 관전자가 된다. */
   "table:leave": (cb: (r: Ack<null>) => void) => void;
   "chat:send": (p: { text: string }, cb: (r: Ack<null>) => void) => void;
+  /** 쇼다운에서 진 사람이 자기 카드를 공개한다 */
+  "hand:show": (cb: (r: Ack<null>) => void) => void;
+  /** 게임 시작 전에 자리를 고른다 */
+  "seat:take": (p: { seat: number }, cb: (r: Ack<null>) => void) => void;
 }
 
 /** 서버 → 클라이언트 */
@@ -224,6 +236,8 @@ export interface ServerToClientEvents {
   "clock:update": (c: ClockState) => void;
   "game:finished": (p: { standings: Standing[] }) => void;
   "chat:message": (m: ChatMessage) => void;
+  /** 누군가 스스로 카드를 공개했다 */
+  "showdown:reveal": (r: ShowdownReveal) => void;
 }
 
 export type Ack<T> =

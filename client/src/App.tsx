@@ -14,15 +14,17 @@ import {
   type ChipUnit,
 } from "./format.ts";
 import { useHoldem } from "./hooks/useSocket.ts";
-import { layoutFor } from "./layout.ts";
+import { computeLayout } from "./layout.ts";
+
+/** 열린 채팅 패널이 차지하는 폭. CSS의 .app-chat-open .stage 여백과 맞춘다 */
+const CHAT_WIDTH = 300;
 
 export default function App() {
   const game = useHoldem();
-  const portrait = usePortrait();
-  const layout = layoutFor(portrait);
-  const scale = useFitScale(layout.width, layout.height, portrait);
+  const [chatOpen, setChatOpen] = useState(true);
+  const layout = useLayout(chatOpen);
+  const portrait = layout.portrait;
   const [unit, setUnit] = useState<ChipUnit>(loadChipUnit);
-  const [chatOpen, setChatOpen] = useState(!portrait);
   const [seenChat, setSeenChat] = useState(0);
 
   // 좁은 화면에서는 채팅이 테이블을 덮으므로 접어 둔다
@@ -65,7 +67,11 @@ export default function App() {
   };
 
   return (
-    <div className={`app${portrait ? " app-portrait" : ""}`}>
+    <div
+      className={`app${portrait ? " app-portrait" : ""}${
+        chatOpen && !portrait ? " app-chat-open" : ""
+      }`}
+    >
       <header className="topbar">
         <RoomCode code={state.roomId} />
         <div className="topbar-info">
@@ -93,20 +99,18 @@ export default function App() {
           바깥이 원래 크기(예: 560px)를 유지하면 화면보다 커져서 그리드가 가운데
           정렬을 포기하고 한쪽으로 밀어버린다.
         */}
+        {/* 화면에 맞는 크기로 그리므로 축소가 필요 없다 — 글자가 제 크기로 나온다 */}
         <div
           className="stage-inner"
-          style={{ width: layout.width * scale, height: layout.height * scale }}
+          style={{ width: layout.width, height: layout.height }}
         >
-          <div
-            className="stage-scale"
-            style={{
-              transform: `scale(${scale})`,
-              width: layout.width,
-              height: layout.height,
-            }}
-          >
-            <Table state={state} shuffling={game.shuffling} layout={layout} unit={unit} />
-          </div>
+          <Table
+            state={state}
+            shuffling={game.shuffling}
+            layout={layout}
+            unit={unit}
+            onTakeSeat={game.takeSeat}
+          />
         </div>
       </main>
 
@@ -120,9 +124,9 @@ export default function App() {
         {state.clock.onBreak && !game.standings && (
           <motion.div
             className="result result-break"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, y: 16, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, x: "-50%" }}
           >
             <h3>브레이크타임</h3>
             <p className="result-next">쉬었다가 자동으로 다시 시작합니다.</p>
@@ -134,9 +138,9 @@ export default function App() {
         {game.showdown && !game.standings && (
           <motion.div
             className="result"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: 16, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: -8, x: "-50%" }}
           >
             <h3>
               {game.showdown.winners
@@ -158,7 +162,9 @@ export default function App() {
       </AnimatePresence>
 
       <footer className="bottombar">
-        {state.clock.finished ? (
+        {state.canShowCards ? (
+          <ShowCardsBar onShow={game.showCards} />
+        ) : state.clock.finished ? (
           <div className="waiting-bar">게임이 끝났습니다. 최종 순위를 확인하세요.</div>
         ) : state.canRebuy ? (
           <div className="rebuy-bar">
@@ -219,6 +225,25 @@ export default function App() {
       />
 
       {game.error && <div className="toast">{game.error}</div>}
+    </div>
+  );
+}
+
+/**
+ * 쇼다운에서 진 사람의 선택. 아무것도 안 하면 그대로 접힌 채 다음 핸드로 넘어간다.
+ */
+function ShowCardsBar({ onShow }: { onShow: () => void }) {
+  const [done, setDone] = useState(false);
+  if (done) return <div className="waiting-bar">카드를 접었습니다</div>;
+  return (
+    <div className="show-bar">
+      <p>카드를 공개할까요?</p>
+      <button type="button" className="btn btn-primary" onClick={onShow}>
+        공개하기
+      </button>
+      <button type="button" className="btn" onClick={() => setDone(true)}>
+        접기
+      </button>
     </div>
   );
 }
@@ -289,9 +314,9 @@ function StandingsPanel({
   return (
     <motion.div
       className="result result-standings"
-      initial={{ opacity: 0, scale: 0.94 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0 }}
+      initial={{ opacity: 0, scale: 0.94, x: "-50%" }}
+      animate={{ opacity: 1, scale: 1, x: "-50%" }}
+      exit={{ opacity: 0, x: "-50%" }}
     >
       <h3>최종 순위</h3>
       <ol className="standings">
@@ -327,32 +352,27 @@ function RoomCode({ code }: { code: string }) {
   );
 }
 
-/** 좁은 화면이면 세로형 테이블을 쓴다. */
-function usePortrait(): boolean {
-  const [portrait, setPortrait] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 760
+/** 화면 크기가 바뀌면 테이블 크기를 다시 계산한다. */
+function useLayout(chatOpen: boolean) {
+  const reserved = () =>
+    chatOpen && window.innerWidth >= 760 ? CHAT_WIDTH : 0;
+  const [layout, setLayout] = useState(() =>
+    computeLayout(
+      typeof window === "undefined" ? 1280 : window.innerWidth,
+      typeof window === "undefined" ? 800 : window.innerHeight,
+      typeof window === "undefined" ? CHAT_WIDTH : reserved()
+    )
   );
   useEffect(() => {
-    const check = () => setPortrait(window.innerWidth < 760);
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-  return portrait;
-}
-
-/** 고정 크기 테이블을 화면에 맞게 통째로 축소한다. */
-function useFitScale(width: number, height: number, portrait: boolean): number {
-  const [scale, setScale] = useState(1);
-  useEffect(() => {
-    const fit = () => {
-      const chrome = portrait ? 190 : 210;
-      const w = window.innerWidth - (portrait ? 12 : 32);
-      const h = window.innerHeight - chrome;
-      setScale(Math.max(0.3, Math.min(1, w / width, h / height)));
+    const update = () =>
+      setLayout(computeLayout(window.innerWidth, window.innerHeight, reserved()));
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
     };
-    fit();
-    window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
-  }, [width, height, portrait]);
-  return scale;
+  }, [chatOpen]);
+  return layout;
 }

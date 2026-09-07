@@ -13,7 +13,8 @@ function makeRoom(names: string[], chips = 100_000) {
   const logs: string[] = [];
   room.emitter = {
     state: () => {}, hole: () => {}, community: () => {}, showdown: () => {},
-    log: (t) => logs.push(t), clock: () => {}, finished: () => {},
+    log: (t) => logs.push(t), reveal: () => {},
+    clock: () => {}, finished: () => {},
   } satisfies RoomEmitter;
   names.forEach((n, i) => room.addPlayer(`p${i}`, n, `s${i}`));
   return { room, logs };

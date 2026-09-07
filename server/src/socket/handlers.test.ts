@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { io as connect, type Socket } from "socket.io-client";
-import type { Ack, Card, ChatMessage, RoomState } from "../../../shared/types.ts";
+import type {
+  Ack, Card, ChatMessage, RoomState, ShowdownResult, ShowdownReveal,
+} from "../../../shared/types.ts";
 import { createGameServer, type GameServer } from "../server.ts";
 
 let server: GameServer;
@@ -32,6 +34,8 @@ class TestClient {
   /** 이 소켓이 받은 모든 room:state의 원본 JSON — 카드 유출 검사용 */
   rawStates: string[] = [];
   chat: ChatMessage[] = [];
+  showdown: ShowdownResult | null = null;
+  lateReveals: ShowdownReveal[] = [];
 
   constructor(readonly playerId: string, readonly name: string, port: number) {
     this.socket = connect(`http://localhost:${port}`, { transports: ["websocket"] });
@@ -44,6 +48,12 @@ class TestClient {
     });
     this.socket.on("chat:message", (m: unknown) => {
       this.chat.push(m as ChatMessage);
+    });
+    this.socket.on("showdown:result", (r: unknown) => {
+      this.showdown = r as ShowdownResult;
+    });
+    this.socket.on("showdown:reveal", (r: unknown) => {
+      this.lateReveals.push(r as ShowdownReveal);
     });
   }
 
@@ -405,6 +415,80 @@ describe("소켓 통합", () => {
       () => host.state!.players.find((p) => p.id === "rb9")?.spectating === false,
       "테이블 복귀"
     );
+  });
+
+  it("이긴 핸드만 공개되고, 진 사람은 스스로 공개할 수 있다", async (t) => {
+    const open: TestClient[] = [];
+    t.after(() => open.forEach((c) => c.close()));
+
+    // 올인 없이 끝까지 가도록 스택을 넉넉히 두고 다음 핸드는 늦춘다
+    const srv = createGameServer({
+      roomDefaults: {
+        turnTimeoutMs: 0,
+        nextHandDelayMs: 60_000,
+        startingChips: 100_000,
+        fixedBlinds: { smallBlind: 10, bigBlind: 20 },
+      },
+    });
+    const p = await srv.listen(0);
+    t.after(() => srv.close());
+
+    const host = new TestClient("sh1", "A", p);
+    open.push(host);
+    const r = await host.emit<{ roomId: string }>("room:create", {
+      name: "A", playerId: "sh1", mode: "tournament",
+    });
+    const roomId = (r as { ok: true; data: { roomId: string } }).data.roomId;
+    for (const [id, name] of [["sh2", "B"], ["sh3", "C"]] as const) {
+      const c = new TestClient(id, name, p);
+      open.push(c);
+      await c.emit("room:join", { roomId, name, playerId: id });
+    }
+    await host.waitFor(() => (host.state?.players.length ?? 0) === 3, "세 명 입장");
+    await host.emit("room:start");
+
+    // 체크/콜만으로 리버까지
+    const ready = () =>
+      open.find((c) => c.state?.currentTurn === c.playerId && c.state?.legalActions);
+    let guard = 0;
+    while (host.showdown === null && guard++ < 80) {
+      const actor = ready();
+      if (!actor) { await new Promise((res) => setTimeout(res, 20)); continue; }
+      await actor.emit("player:action", {
+        type: actor.state!.legalActions!.canCheck ? "check" : "call",
+      });
+    }
+    assert.notEqual(host.showdown, null, "쇼다운에 도달해야 한다");
+
+    const winners = host.showdown!.winners;
+    assert.deepEqual(
+      host.showdown!.reveals.map((x) => x.playerId).sort(),
+      [...winners].sort(),
+      "이긴 핸드만 자동 공개된다"
+    );
+
+    const loser = open.find((c) => !winners.includes(c.playerId))!;
+    assert.ok(loser, "진 사람이 있어야 한다");
+    await loser.waitFor(() => loser.state?.canShowCards === true, "공개 선택 가능");
+
+    // 공개 전에는 남에게 안 보인다
+    const other = open.find((c) => c !== loser)!;
+    assert.equal(
+      other.state!.players.find((x) => x.id === loser.playerId)!.cards,
+      null,
+      "공개 전 카드가 새면 안 된다"
+    );
+
+    assert.equal((await loser.emit("hand:show")).ok, true);
+    await other.waitFor(() => other.lateReveals.length > 0, "공개 이벤트 수신");
+    assert.equal(other.lateReveals[0]!.playerId, loser.playerId);
+    await other.waitFor(
+      () => other.state!.players.find((x) => x.id === loser.playerId)?.cards != null,
+      "카드가 상태에 반영"
+    );
+
+    // 두 번은 안 된다
+    assert.equal((await loser.emit("hand:show")).ok, false);
   });
 
   it("차례가 아닌 사람의 액션은 거부된다", async () => {

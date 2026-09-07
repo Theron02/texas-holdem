@@ -36,6 +36,9 @@ function attachEmitter(io: IO, room: Room): void {
     showdown: (result) => {
       io.to(room.id).emit("showdown:result", result);
     },
+    reveal: (r) => {
+      io.to(room.id).emit("showdown:reveal", r);
+    },
     log: (text) => {
       io.to(room.id).emit("room:log", { text, at: Date.now() });
     },
@@ -131,6 +134,28 @@ export function registerHandlers(io: IO, manager: RoomManager): void {
       if (!room) return cb(fail("방에 들어와 있지 않습니다"));
       try {
         room.leaveTable(socket.data.playerId);
+        cb({ ok: true, data: null });
+      } catch (e) {
+        cb(fail(errText(e)));
+      }
+    });
+
+    socket.on("hand:show", (cb) => {
+      const room = manager.get(socket.data.roomId ?? "");
+      if (!room) return cb(fail("방에 들어와 있지 않습니다"));
+      try {
+        room.showCards(socket.data.playerId);
+        cb({ ok: true, data: null });
+      } catch (e) {
+        cb(fail(errText(e)));
+      }
+    });
+
+    socket.on("seat:take", ({ seat }, cb) => {
+      const room = manager.get(socket.data.roomId ?? "");
+      if (!room) return cb(fail("방에 들어와 있지 않습니다"));
+      try {
+        room.takeSeat(socket.data.playerId, seat);
         cb({ ok: true, data: null });
       } catch (e) {
         cb(fail(errText(e)));

@@ -15,6 +15,7 @@ function makeRoom(names: string[], mode: GameMode = "tournament", chips?: number
   const emitter: RoomEmitter = {
     state: () => {}, hole: () => {}, community: () => {}, showdown: () => {},
     log: (t) => logs.push(t),
+    reveal: () => {},
     clock: () => {},
     finished: (s) => finished.push(s),
   };

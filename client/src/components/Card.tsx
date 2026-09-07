@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import type React from "react";
 import type { Card as CardType } from "../../../shared/types.ts";
 
 export type CardSize = "sm" | "md" | "lg";
@@ -13,6 +14,10 @@ interface Props {
   /** 딜링 순서에 따른 지연(초) */
   delay?: number;
   dimmed?: boolean;
+  /** size 대신 폭을 직접 지정한다. 높이는 카드 비율(1:1.4)로 따라간다 */
+  width?: number;
+  /** 앞 카드와 겹치는 폭(음수). 부채꼴로 펼칠 때 쓴다 */
+  offsetLeft?: number;
 }
 
 const RED = new Set(["♥", "♦"]);
@@ -24,6 +29,8 @@ export default function Card({
   dealFrom,
   delay = 0,
   dimmed,
+  width,
+  offsetLeft,
 }: Props) {
   const showBack = faceDown || !card;
   const red = card ? RED.has(card.suit) : false;
@@ -31,6 +38,15 @@ export default function Card({
   return (
     <motion.div
       className={`card card-${size}${dimmed ? " card-dimmed" : ""}`}
+      style={
+        width
+          ? ({
+              "--card-w": `${width}px`,
+              "--card-h": `${Math.round(width * 1.4)}px`,
+              marginLeft: offsetLeft ? `${offsetLeft}px` : undefined,
+            } as React.CSSProperties)
+          : undefined
+      }
       initial={
         dealFrom
           ? { x: dealFrom.x, y: dealFrom.y, opacity: 0, rotate: -18, scale: 0.7 }

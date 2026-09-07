@@ -8,6 +8,7 @@ import type {
   PlayerAction,
   RoomState,
   ShowdownResult,
+  ShowdownReveal,
   Standing,
 } from "../../../shared/types.ts";
 
@@ -45,6 +46,8 @@ export interface HoldemConnection {
   startHand: () => void;
   act: (action: PlayerAction) => void;
   rebuy: () => void;
+  showCards: () => void;
+  takeSeat: (seat: number) => void;
   leaveTable: () => void;
   sendChat: (text: string) => void;
   leave: () => void;
@@ -102,6 +105,14 @@ export function useHoldem(): HoldemConnection {
       }
     });
     socket.on("showdown:result", (r: ShowdownResult) => setShowdown(r));
+    // 진 사람이 나중에 공개하면 결과 패널에 덧붙인다
+    socket.on("showdown:reveal", (r: ShowdownReveal) => {
+      setShowdown((cur) =>
+        cur && !cur.reveals.some((x) => x.playerId === r.playerId)
+          ? { ...cur, reveals: [...cur.reveals, r] }
+          : cur
+      );
+    });
     socket.on("game:finished", (p: { standings: Standing[] }) => {
       setStandings(p.standings);
       setShowdown(null);
@@ -166,6 +177,17 @@ export function useHoldem(): HoldemConnection {
     socketRef.current?.emit("player:rebuy", handle);
   }, [handle]);
 
+  const showCards = useCallback(() => {
+    socketRef.current?.emit("hand:show", handle);
+  }, [handle]);
+
+  const takeSeat = useCallback(
+    (seat: number) => {
+      socketRef.current?.emit("seat:take", { seat }, handle);
+    },
+    [handle]
+  );
+
   const leaveTable = useCallback(() => {
     socketRef.current?.emit("table:leave", handle);
   }, [handle]);
@@ -189,6 +211,6 @@ export function useHoldem(): HoldemConnection {
 
   return {
     connected, state, logs, chat, showdown, shuffling, error, standings,
-    createRoom, joinRoom, startHand, act, rebuy, leaveTable, sendChat, leave,
+    createRoom, joinRoom, startHand, act, rebuy, showCards, takeSeat, leaveTable, sendChat, leave,
   };
 }

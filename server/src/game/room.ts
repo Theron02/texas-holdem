@@ -61,6 +61,7 @@ export interface RoomEmitter {
   hole(playerId: string, cards: Card[]): void;
   community(phase: Phase, cards: Card[]): void;
   showdown(result: ShowdownResult): void;
+  reveal(r: ShowdownReveal): void;
   log(text: string): void;
   clock(state: ClockState): void;
   finished(standings: Standing[]): void;
@@ -85,6 +86,7 @@ const noopEmitter: RoomEmitter = {
   hole: () => {},
   community: () => {},
   showdown: () => {},
+  reveal: () => {},
   log: () => {},
   clock: () => {},
   finished: () => {},
@@ -125,6 +127,8 @@ export class Room {
   private levelElapsedMs = 0;
   private levelTimer: NodeJS.Timeout | null = null;
   private eliminationCounter = 0;
+  /** autoActWhileDisconnected가 act()를 통해 자기 자신을 다시 부르는 것을 막는다 */
+  private autoActing = false;
   /** 앤티처럼 특정인에게 귀속되지 않고 메인팟에 들어가는 칩 */
   private deadMoney = 0;
 
@@ -132,6 +136,8 @@ export class Room {
 
   /** 쇼다운에서 공개된 카드 (핸드가 끝날 때까지 유지) */
   private revealed = new Set<string>();
+  /** 이번 쇼다운의 핸드 평가 결과. 진 사람이 나중에 공개를 고를 때 쓴다 */
+  private lastHands = new Map<string, EvaluatedHand>();
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
 
@@ -145,7 +151,7 @@ export class Room {
     this.startingChips = opts.startingChips ?? this.preset.startingChips;
     this.turnTimeoutMs = opts.turnTimeoutMs ?? 45_000;
     this.nextHandDelayMs = opts.nextHandDelayMs ?? 6_000;
-    this.maxPlayers = opts.maxPlayers ?? 9;
+    this.maxPlayers = opts.maxPlayers ?? 10;
   }
 
   // ------------------------------------------------------------- 블라인드/시계
@@ -320,6 +326,30 @@ export class Room {
     return this.players.length;
   }
 
+  /**
+   * 게임 시작 전에 자리를 옮긴다.
+   * 핸드가 시작되면 좌석 순서가 곧 액션 순서라 도중에 바꿀 수 없다.
+   */
+  takeSeat(playerId: string, seat: number): void {
+    if (this.phase !== "waiting" || this.handNumber > 0) {
+      throw new Error("게임 시작 전에만 자리를 옮길 수 있습니다");
+    }
+    if (!Number.isInteger(seat) || seat < 0 || seat >= this.maxPlayers) {
+      throw new Error("없는 자리입니다");
+    }
+    const p = this.players.find((x) => x.id === playerId);
+    if (!p) throw new Error("좌석을 찾을 수 없습니다");
+    if (p.seat === seat) return;
+    if (this.players.some((x) => x.seat === seat)) {
+      throw new Error("이미 앉은 자리입니다");
+    }
+
+    p.seat = seat;
+    this.players.sort((a, b) => a.seat - b.seat);
+    this.emitter.log(`${p.name} 님이 ${seat + 1}번 자리로 옮겼습니다`);
+    this.emitter.state();
+  }
+
   removePlayer(id: string): void {
     const p = this.players.find((x) => x.id === id);
     if (!p) return;
@@ -346,6 +376,8 @@ export class Room {
     p.connected = false;
     p.socketId = null;
     p.disconnectedAt = Date.now();
+    // 자기 차례에 끊긴 경우에도 45초를 기다리지 않는다
+    this.autoActWhileDisconnected();
     return p;
   }
 
@@ -384,6 +416,7 @@ export class Room {
 
     this.handNumber++;
     this.revealed.clear();
+    this.lastHands.clear();
     this.communityCards = [];
     this.deadMoney = 0;
     this.deck = shuffle(createDeck());
@@ -401,10 +434,12 @@ export class Room {
       p.inHand = !p.sittingOut;
     }
 
-    this.dealerIndex = this.nextIndexWhere(
-      this.dealerIndex,
-      (p) => p.inHand
-    );
+    // 첫 핸드는 가장 높은 번호 좌석(10번 자리)에 버튼을 둔다.
+    // 그래야 1번 자리가 스몰블라인드부터 시작한다.
+    this.dealerIndex =
+      this.handNumber === 1
+        ? this.lastIndexWhere((p) => p.inHand)
+        : this.nextIndexWhere(this.dealerIndex, (p) => p.inHand);
 
     // 딜러 왼쪽부터 한 장씩 두 바퀴
     const order = this.orderFrom(this.dealerIndex + 1).filter((p) => p.inHand);
@@ -426,6 +461,7 @@ export class Room {
       return;
     }
     this.emitter.state();
+    this.autoActWhileDisconnected();
   }
 
   private postBlinds(order: Player[]): void {
@@ -577,6 +613,37 @@ export class Room {
   // ------------------------------------------------------------ 라운드 진행
 
   private advance(): void {
+    this.advanceTurn();
+    this.autoActWhileDisconnected();
+  }
+
+  /**
+   * 접속이 끊긴 사람의 차례는 45초를 기다리지 않고 바로 처리한다.
+   * 낼 것이 없으면 체크, 있으면 폴드.
+   */
+  private autoActWhileDisconnected(): void {
+    if (this.autoActing) return;
+    this.autoActing = true;
+    try {
+      let guard = 0;
+      while (this.currentTurn && guard++ < 40) {
+        const p = this.players.find((x) => x.id === this.currentTurn);
+        if (!p || p.connected) break;
+        const legal = this.legalActionsFor(p);
+        const type = legal.canCheck ? "check" : "fold";
+        this.emitter.log(`${p.name}: 접속 끊김 — 자동 ${legal.canCheck ? "체크" : "폴드"}`);
+        try {
+          this.act(p.id, { type });
+        } catch {
+          break;
+        }
+      }
+    } finally {
+      this.autoActing = false;
+    }
+  }
+
+  private advanceTurn(): void {
     const contenders = this.players.filter((p) => p.inHand && !p.folded);
     if (contenders.length <= 1) {
       this.endHandUncontested(contenders[0]);
@@ -688,8 +755,8 @@ export class Room {
     const hands = new Map<string, EvaluatedHand>();
     for (const p of contenders) {
       hands.set(p.id, evaluate(p.cards, this.communityCards));
-      this.revealed.add(p.id);
     }
+    this.lastHands = hands;
 
     const oddChipOrder = this.orderFrom(this.dealerIndex + 1).map((p) => p.id);
     const pots = this.currentPots();
@@ -710,12 +777,21 @@ export class Room {
       }
     });
 
-    const reveals: ShowdownReveal[] = contenders.map((p) => ({
-      playerId: p.id,
-      cards: p.cards,
-      handName: hands.get(p.id)!.name,
-      handDescr: hands.get(p.id)!.descr,
-    }));
+    // 올인이 걸린 핸드는 전원 공개가 원칙이다. 그 외에는 이긴 핸드만 열고,
+    // 진 사람은 공개할지 스스로 고른다.
+    const allInShowdown = contenders.some((p) => p.allIn);
+    for (const p of contenders) {
+      if (allInShowdown || winners.has(p.id)) this.revealed.add(p.id);
+    }
+
+    const reveals: ShowdownReveal[] = contenders
+      .filter((p) => this.revealed.has(p.id))
+      .map((p) => ({
+        playerId: p.id,
+        cards: p.cards,
+        handName: hands.get(p.id)!.name,
+        handDescr: hands.get(p.id)!.descr,
+      }));
 
     for (const payout of payouts) {
       const p = this.players.find((x) => x.id === payout.playerId)!;
@@ -767,6 +843,36 @@ export class Room {
     } else {
       this.emitter.log("리바인을 기다리는 중입니다.");
     }
+  }
+
+  // ------------------------------------------------------------ 카드 공개 선택
+
+  /** 진 사람이 쇼다운 뒤에 자기 카드를 열 수 있는 상태인지 */
+  canShowCards(p: Player): boolean {
+    return (
+      this.phase === "showdown" &&
+      this.lastHands.has(p.id) &&
+      !this.revealed.has(p.id)
+    );
+  }
+
+  /** 진 사람이 스스로 카드를 공개한다. */
+  showCards(playerId: string): void {
+    const p = this.players.find((x) => x.id === playerId);
+    if (!p) throw new Error("좌석을 찾을 수 없습니다");
+    const hand = this.lastHands.get(playerId);
+    if (!hand) throw new Error("공개할 핸드가 없습니다");
+    if (this.revealed.has(playerId)) throw new Error("이미 공개했습니다");
+
+    this.revealed.add(playerId);
+    this.emitter.log(`${p.name} 님이 카드를 공개했습니다 — ${hand.descr}`);
+    this.emitter.reveal({
+      playerId,
+      cards: p.cards,
+      handName: hand.name,
+      handDescr: hand.descr,
+    });
+    this.emitter.state();
   }
 
   // -------------------------------------------------------- 중도 퇴장 / 관전
@@ -900,6 +1006,14 @@ export class Room {
 
   private playerAt(index: number): Player | undefined {
     return index < 0 ? undefined : this.players[index];
+  }
+
+  /** 조건에 맞는 마지막(가장 높은 좌석 번호) 플레이어의 인덱스. 없으면 -1 */
+  private lastIndexWhere(pred: (p: Player) => boolean): number {
+    for (let i = this.players.length - 1; i >= 0; i--) {
+      if (pred(this.players[i]!)) return i;
+    }
+    return -1;
   }
 
   /** from 다음 인덱스부터 한 바퀴 돌며 조건에 맞는 첫 플레이어의 인덱스. 없으면 -1 */
@@ -1075,6 +1189,7 @@ export class Room {
       smallBlind: this.smallBlind,
       bigBlind: this.bigBlind,
       handNumber: this.handNumber,
+      maxPlayers: this.maxPlayers,
       youId: viewerId,
       legalActions:
         viewer && this.currentTurn === viewerId
@@ -1083,6 +1198,7 @@ export class Room {
       turnEndsAt: this.turnEndsAt,
       clock: this.clockState(),
       canRebuy: viewer ? this.canRebuy(viewer) : false,
+      canShowCards: viewer ? this.canShowCards(viewer) : false,
       standings: this.standings,
     };
   }
