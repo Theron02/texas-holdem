@@ -14,6 +14,9 @@ export function saveChipUnit(unit: ChipUnit): void {
 /**
  * 칩 표기. BB 모드에서는 빅블라인드로 나눈 값을 보여준다.
  * 블라인드가 오르면 같은 칩도 BB 수치는 줄어든다 — 그게 토너먼트에서 보고 싶은 값이다.
+ *
+ * 딱 떨어지면 정수로, 아니면 소수 한 자리까지. 12.5BB를 입력했는데 13BB로
+ * 보이면 내가 얼마를 걸었는지 헷갈린다.
  */
 export function formatChips(
   amount: number,
@@ -21,9 +24,8 @@ export function formatChips(
   bigBlind: number
 ): string {
   if (unit === "bb" && bigBlind > 0) {
-    const bb = amount / bigBlind;
-    // 10BB 미만은 소수 한 자리까지 (숏스택일수록 정확도가 중요하다)
-    const text = bb >= 10 ? Math.round(bb).toLocaleString() : bb.toFixed(1);
+    const bb = Math.round((amount / bigBlind) * 10) / 10;
+    const text = Number.isInteger(bb) ? bb.toLocaleString() : bb.toFixed(1);
     return `${text}BB`;
   }
   return amount.toLocaleString();
