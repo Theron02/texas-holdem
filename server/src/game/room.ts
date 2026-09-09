@@ -2,6 +2,7 @@ import type {
   ActionType,
   Card,
   ClockState,
+  EquityView,
   GameMode,
   Standing,
   LegalActions,
@@ -15,6 +16,7 @@ import type {
 } from "../../../shared/types.ts";
 import { buildPots, splitPot, type Pot } from "./betting.ts";
 import { createDeck, draw, shuffle } from "./deck.ts";
+import { estimateEquity } from "./equity.ts";
 import { evaluate, pickWinners, type EvaluatedHand } from "./handEvaluator.ts";
 import { hasLevelAfter, levelAt, presetFor, type ModePreset } from "./tournament.ts";
 
@@ -138,6 +140,8 @@ export class Room {
   private revealed = new Set<string>();
   /** 이번 쇼다운의 핸드 평가 결과. 진 사람이 나중에 공개를 고를 때 쓴다 */
   private lastHands = new Map<string, EvaluatedHand>();
+  /** 승률 캐시. 같은 상황을 여러 번 물어도 한 번만 계산한다 */
+  private equityCache = new Map<string, EquityView>();
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
 
@@ -417,6 +421,7 @@ export class Room {
     this.handNumber++;
     this.revealed.clear();
     this.lastHands.clear();
+    this.equityCache.clear();
     this.communityCards = [];
     this.deadMoney = 0;
     this.deck = shuffle(createDeck());
@@ -845,6 +850,44 @@ export class Room {
     }
   }
 
+  /**
+   * 지금 이 사람이 만든 족보. 5장이 안 되면(프리플랍) 판정할 수 없다.
+   * 본인 카드만 쓰므로 남에게 새지 않는다.
+   */
+  private madeHandFor(p: Player): { name: string; descr: string } | null {
+    if (p.cards.length !== 2) return null;
+    if (p.cards.length + this.communityCards.length < 5) return null;
+    const h = evaluate(p.cards, this.communityCards);
+    return { name: h.name, descr: h.descr };
+  }
+
+  // ------------------------------------------------------------------ 승률
+
+  /**
+   * 요청한 사람의 승률. 그 사람 카드와 보드, 그리고 남은 상대 "수"만 넘긴다.
+   * 상대의 실제 카드는 넘기지 않으므로 계산 과정에서 샐 수 없다.
+   */
+  equityFor(playerId: string): EquityView | null {
+    const p = this.players.find((x) => x.id === playerId);
+    if (!p || !p.inHand || p.folded || p.cards.length !== 2) return null;
+
+    const opponents = this.players.filter(
+      (x) => x.inHand && !x.folded && x.id !== playerId
+    ).length;
+    if (opponents < 1) return null;
+
+    const cacheKey = `${playerId}:${this.communityCards.length}:${opponents}`;
+    const cached = this.equityCache.get(cacheKey);
+    if (cached) return cached;
+
+    // 보드가 덜 깔릴수록 경우의 수가 많아 판수를 늘린다
+    const iterations = this.communityCards.length >= 4 ? 1200 : 2400;
+    const r = estimateEquity(p.cards, this.communityCards, opponents, iterations);
+    const view: EquityView = { win: r.win, tie: r.tie, opponents };
+    this.equityCache.set(cacheKey, view);
+    return view;
+  }
+
   // ------------------------------------------------------------ 카드 공개 선택
 
   /** 진 사람이 쇼다운 뒤에 자기 카드를 열 수 있는 상태인지 */
@@ -1199,6 +1242,7 @@ export class Room {
       clock: this.clockState(),
       canRebuy: viewer ? this.canRebuy(viewer) : false,
       canShowCards: viewer ? this.canShowCards(viewer) : false,
+      myHand: viewer ? this.madeHandFor(viewer) : null,
       standings: this.standings,
     };
   }

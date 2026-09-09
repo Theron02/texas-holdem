@@ -237,6 +237,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   gap: 3px;
 }
 .seat-cards { display: flex; gap: 4px; height: 68px; align-items: flex-end; }
+
 .seat-self .seat-cards { height: 82px; }
 
 .seat-plate {
@@ -256,6 +257,15 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 
 .seat-name { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; font-weight: 600; }
 .seat-name-text { color: #cfdde5; }
+/* 내 좌석은 이름 대신 지금 족보를 보여준다 */
+.seat-made { color: var(--gold); font-weight: 700; display: flex; align-items: baseline; min-width: 0; }
+/* 자리가 모자라면 족보 이름이 아니라 끗수부터 잘려야 한다 */
+.seat-made b { flex: 0 0 auto; font-weight: 700; }
+.seat-made em {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-style: normal; font-size: 10px; color: var(--muted); margin-left: 4px;
+}
 .seat-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 74px; }
 .seat-badge { font-size: 9px; color: var(--gold); }
 .seat-chips { font-size: 15px; color: #eaf2f6; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
@@ -540,6 +550,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 600;
 }
 .unit-toggle:hover { color: var(--gold); border-color: var(--gold); }
+.unit-toggle.on { color: var(--gold); border-color: var(--gold); background: #14181a; }
 
 .clock-elapsed {
   font-size: 11px; color: var(--muted);
@@ -550,11 +561,16 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 /* --------------------------------------------------------------- 모바일 */
 
 @media (max-width: 760px) {
-  .topbar { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
+  /* 한 줄에 들어가야 한다. 두 줄이 되면 테이블 자리가 40px 줄어든다. */
+  .topbar { padding: 7px 8px; gap: 6px; flex-wrap: nowrap; }
+  .topbar-info { gap: 5px; min-width: 0; }
+  .clock-elapsed { display: none; }
+  .unit-toggle { padding: 4px 7px; font-size: 10px; }
+  .btn-ghost { padding: 6px 8px; font-size: 13px; }
+  .menu { flex: none; }
   .room-code-label, .room-code-copy { display: none; }
   .room-code-value { font-size: 15px; letter-spacing: 0.12em; }
-  .topbar-info { gap: 8px; }
-  .clock { padding: 3px 8px; gap: 6px; }
+  .clock { padding: 3px 7px; gap: 5px; }
   .clock-blinds { font-size: 11px; }
   .clock-ante { display: none; }
 
@@ -575,6 +591,8 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   .chip { width: 14px; height: 14px; }
   .seat-no, .dealer-button { width: 14px; height: 14px; font-size: 9px; }
   .seat-action { font-size: 10px; padding: 1px 5px; top: -8px; }
+  /* 좁아서 끗수까지는 못 넣는다 — 툴팁으로 남긴다 */
+  .seat-made em { display: none; }
   .pot-amount { font-size: 13px; padding: 3px 9px 3px 3px; gap: 4px; }
   .pot-amount .chip { width: 12px; height: 12px; }
   .bottombar { padding: 8px 10px 14px; min-height: 84px; }
@@ -654,4 +672,36 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   .seat-empty-no { width: 21px; height: 21px; font-size: 11px; }
   .seat-empty-label { font-size: 10px; }
   .raise-input input { width: 54px; font-size: 15px; }
+}
+
+/* ----------------------------------------------------------------- 분석 줄 */
+
+.analysis {
+  display: flex; justify-content: center; flex-wrap: wrap;
+  gap: 8px; padding: 7px 16px 0;
+}
+.analysis-stat {
+  display: flex; align-items: baseline; gap: 6px;
+  background: #121a1f; border: 1px solid var(--line);
+  border-radius: 9px; padding: 5px 12px;
+  font-size: 12px; color: var(--muted);
+}
+.analysis-stat em { font-style: normal; }
+.analysis-stat b {
+  font-size: 16px; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.analysis-stat b.dim { color: var(--muted); font-weight: 600; font-size: 13px; }
+.analysis-stat i { font-style: normal; font-size: 10px; opacity: 0.75; }
+.analysis-equity b { color: var(--gold); }
+.analysis-stat.ok { border-color: #2f7a56; }
+.analysis-stat.ok b { color: var(--green); }
+.analysis-stat.bad { border-color: #6b3434; }
+.analysis-stat.bad b { color: var(--red); }
+
+@media (max-width: 760px) {
+  .analysis { gap: 5px; padding: 5px 8px 0; }
+  .analysis-stat { padding: 4px 8px; font-size: 11px; gap: 4px; }
+  .analysis-stat b { font-size: 14px; }
+  .analysis-stat i { display: none; }
 }

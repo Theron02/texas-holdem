@@ -3,6 +3,7 @@ import { io, type Socket } from "socket.io-client";
 import type {
   Ack,
   ChatMessage,
+  EquityView,
   ChatOrLogEntry,
   GameMode,
   PlayerAction,
@@ -48,6 +49,10 @@ export interface HoldemConnection {
   rebuy: () => void;
   showCards: () => void;
   takeSeat: (seat: number) => void;
+  /** 내 승률을 계산해 받아온다 (본인에게만 응답) */
+  requestEquity: () => void;
+  equity: EquityView | null;
+  equityLoading: boolean;
   leaveTable: () => void;
   sendChat: (text: string) => void;
   leave: () => void;
@@ -66,6 +71,8 @@ export function useHoldem(): HoldemConnection {
   const handRef = useRef(0);
   const rejoinRef = useRef<{ name: string; roomId: string } | null>(null);
   const [standings, setStandings] = useState<Standing[] | null>(null);
+  const [equity, setEquity] = useState<EquityView | null>(null);
+  const [equityLoading, setEquityLoading] = useState(false);
 
   useEffect(() => {
     const socket = io(SERVER_URL, { transports: ["websocket"] });
@@ -100,6 +107,7 @@ export function useHoldem(): HoldemConnection {
       if (s.handNumber !== handRef.current && s.phase === "preflop") {
         handRef.current = s.handNumber;
         setShowdown(null);
+        setEquity(null);
         setShuffling(true);
         setTimeout(() => setShuffling(false), 900);
       }
@@ -181,6 +189,16 @@ export function useHoldem(): HoldemConnection {
     socketRef.current?.emit("hand:show", handle);
   }, [handle]);
 
+  const requestEquity = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    setEquityLoading(true);
+    socket.emit("analysis:equity", (res: Ack<EquityView | null>) => {
+      setEquityLoading(false);
+      setEquity(res.ok ? res.data : null);
+    });
+  }, []);
+
   const takeSeat = useCallback(
     (seat: number) => {
       socketRef.current?.emit("seat:take", { seat }, handle);
@@ -211,6 +229,7 @@ export function useHoldem(): HoldemConnection {
 
   return {
     connected, state, logs, chat, showdown, shuffling, error, standings,
-    createRoom, joinRoom, startHand, act, rebuy, showCards, takeSeat, leaveTable, sendChat, leave,
+    createRoom, joinRoom, startHand, act, rebuy, showCards, takeSeat, requestEquity, leaveTable, sendChat, leave,
+    equity, equityLoading,
   };
 }

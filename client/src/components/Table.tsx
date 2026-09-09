@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RoomState } from "../../../shared/types.ts";
 import type { ChipUnit } from "../format.ts";
+import { koreanHand } from "../handName.ts";
 import type { TableLayout } from "../layout.ts";
 import Card from "./Card.tsx";
 import PlayerSeat from "./PlayerSeat.tsx";
@@ -61,6 +62,7 @@ export default function Table({
   // 인원·화면 크기가 어떻게 조합돼도 겹치지 않는다.
   const seatScale = fitSeatScale(layout, seatCount);
   // 좌석이 남겨준 공간에 맞춰 보드 카드 크기와 팟 위치를 정한다
+  const madeHand = state.myHand ? koreanHand(state.myHand) : null;
   const board = useMemo(
     () => fitBoard(layout, seatCount, seatScale),
     [layout, seatCount, seatScale]
@@ -159,6 +161,7 @@ export default function Table({
               unit={unit}
               bigBlind={bb}
               seatScale={seatScale}
+              madeHand={player.id === state.youId ? madeHand : null}
             />
           );
         })}
@@ -247,6 +250,26 @@ function fitBoard(layout: TableLayout, seatCount: number, seatScale: number) {
     return left <= cx - w / 2 && right >= cx + w / 2;
   };
 
+  /** [top, bottom] 높이에서 좌석에 막히지 않는 가로 구간들 */
+  const freeGaps = (top: number, bottom: number) => {
+    const blocked: [number, number][] = [];
+    for (const p of seats) {
+      if (p.y + sh / 2 <= top || p.y - sh / 2 >= bottom) continue;
+      blocked.push([p.x - sw / 2 - 6, p.x + sw / 2 + 6]);
+    }
+    blocked.sort((a, b) => a[0] - b[0]);
+
+    const gaps: { center: number; width: number }[] = [];
+    let cursor = layout.feltInsetX + 8;
+    const end = layout.width - layout.feltInsetX - 8;
+    for (const [l, r] of blocked) {
+      if (l > cursor) gaps.push({ center: (cursor + l) / 2, width: l - cursor });
+      cursor = Math.max(cursor, r);
+    }
+    if (end > cursor) gaps.push({ center: (cursor + end) / 2, width: end - cursor });
+    return gaps;
+  };
+
   /** 선호 위치에서 위아래로 번갈아 멀어지며 후보를 만든다 */
   const candidates = (prefer: number, reach: number) => {
     const out = [prefer];
@@ -301,17 +324,26 @@ function fitBoard(layout: TableLayout, seatCount: number, seatScale: number) {
     };
   }
 
-  // 어떤 조합도 안 되면 가장 작은 보드를 가운데 두고 팟은 바로 아래에
+  // 어떤 조합도 안 되는 아주 좁은 화면(작은 구형 휴대폰 + 분석 줄)에서는
+  // 가장 작은 보드를 가운데 두고, 팟은 가운데를 고집하지 않고 빈 구간에 둔다.
   const cardW = MIN_CARD_W;
   const step = Math.round(MIN_CARD_W * 0.58);
   const rowH = cardW * 1.4;
-  return {
-    cardW,
-    step,
-    boardY: layout.communityY,
-    gap,
-    potPos: { x: cx, y: layout.communityY + rowH / 2 + potH / 2 + 6 },
-  };
+  const boardY = layout.communityY;
+
+  let potPos = { x: cx, y: boardY + rowH / 2 + potH / 2 + 6 };
+  let best = -1;
+  for (const y of candidates(potPos.y, layout.height * 0.3)) {
+    if (y - potH / 2 < layout.feltInsetY + 4) continue;
+    if (y + potH / 2 > layout.height - layout.feltInsetY - 4) continue;
+    for (const g of freeGaps(y - potH / 2, y + potH / 2)) {
+      if (g.width >= potW && g.width > best) {
+        best = g.width;
+        potPos = { x: g.center, y };
+      }
+    }
+  }
+  return { cardW, step, boardY, gap, potPos };
 
 }
 

@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { PublicPlayer, Standing } from "../../shared/types.ts";
 import ActionBar from "./components/ActionBar.tsx";
+import Analysis from "./components/Analysis.tsx";
 import ChatPanel from "./components/ChatPanel.tsx";
 import Clock from "./components/Clock.tsx";
 import Lobby from "./components/Lobby.tsx";
@@ -18,11 +19,24 @@ import { computeLayout } from "./layout.ts";
 
 /** 열린 채팅 패널이 차지하는 폭. CSS의 .app-chat-open .stage 여백과 맞춘다 */
 const CHAT_WIDTH = 300;
+/** 분석 줄이 차지하는 실제 높이. 켜면 테이블이 그만큼 줄어야 잘리지 않는다 */
+const ANALYSIS_HEIGHT = 32;
+/**
+ * 이보다 짧은 화면에서는 분석 줄을 넣을 자리가 없다.
+ * 억지로 넣으면 팟이 좌석 위로 올라간다 (구형 소형 휴대폰).
+ */
+const ANALYSIS_MIN_HEIGHT = 620;
 
 export default function App() {
   const game = useHoldem();
   const [chatOpen, setChatOpen] = useState(true);
-  const layout = useLayout(chatOpen);
+  const [analysisOn, setAnalysisOn] = useState(
+    () => localStorage.getItem("holdem:analysis") === "on"
+  );
+  const tallEnough = useTallEnough();
+  // 화면이 너무 짧으면 켜져 있어도 접는다 — 넣을 자리가 없다
+  const showAnalysis = analysisOn && tallEnough;
+  const layout = useLayout(chatOpen, showAnalysis);
   const portrait = layout.portrait;
   const [unit, setUnit] = useState<ChipUnit>(loadChipUnit);
   const [seenChat, setSeenChat] = useState(0);
@@ -36,6 +50,18 @@ export default function App() {
   useEffect(() => {
     if (chatOpen) setSeenChat(chatCount);
   }, [chatOpen, chatCount]);
+
+  // 켜져 있을 때만, 그리고 상황이 바뀔 때만 계산을 요청한다.
+  // 매 상태 갱신마다 부르면 서버가 몬테카를로를 계속 돌린다.
+  const board = game.state?.communityCards.length ?? 0;
+  const hand = game.state?.handNumber ?? 0;
+  const alive = game.state?.players.filter((p) => p.hasCards && !p.folded).length ?? 0;
+  const myTurn = game.state?.currentTurn === game.state?.youId;
+  const { requestEquity } = game;
+  useEffect(() => {
+    if (!showAnalysis || hand === 0) return;
+    requestEquity();
+  }, [showAnalysis, hand, board, alive, myTurn, requestEquity]);
 
   if (!game.state) {
     return (
@@ -83,6 +109,23 @@ export default function App() {
             title="칩 표시 단위 바꾸기"
           >
             {unit === "bb" ? "BB" : "금액"}
+          </button>
+          <button
+            type="button"
+            className={`unit-toggle${analysisOn ? " on" : ""}`}
+            onClick={() => {
+              const next = !analysisOn;
+              setAnalysisOn(next);
+              localStorage.setItem("holdem:analysis", next ? "on" : "off");
+            }}
+            title={
+              tallEnough
+                ? "승률·팟오즈 표시 (나에게만 보입니다)"
+                : "화면이 짧아 분석 줄을 넣을 자리가 없습니다"
+            }
+            disabled={!tallEnough}
+          >
+            분석
           </button>
           {!game.connected && <span className="warn">재연결 중…</span>}
         </div>
@@ -160,6 +203,15 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {showAnalysis && !state.clock.finished && (
+        <Analysis
+          state={state}
+          equity={game.equity}
+          loading={game.equityLoading}
+          unit={unit}
+        />
+      )}
 
       <footer className="bottombar">
         {state.canShowCards ? (
@@ -352,20 +404,38 @@ function RoomCode({ code }: { code: string }) {
   );
 }
 
+/** 분석 줄을 넣을 만큼 화면이 긴지 */
+function useTallEnough(): boolean {
+  const [tall, setTall] = useState(
+    () => typeof window === "undefined" || window.innerHeight >= ANALYSIS_MIN_HEIGHT
+  );
+  useEffect(() => {
+    const check = () => setTall(window.innerHeight >= ANALYSIS_MIN_HEIGHT);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return tall;
+}
+
 /** 화면 크기가 바뀌면 테이블 크기를 다시 계산한다. */
-function useLayout(chatOpen: boolean) {
+function useLayout(chatOpen: boolean, analysisOn: boolean) {
   const reserved = () =>
     chatOpen && window.innerWidth >= 760 ? CHAT_WIDTH : 0;
+  const bottom = analysisOn ? ANALYSIS_HEIGHT : 0;
   const [layout, setLayout] = useState(() =>
     computeLayout(
       typeof window === "undefined" ? 1280 : window.innerWidth,
       typeof window === "undefined" ? 800 : window.innerHeight,
-      typeof window === "undefined" ? CHAT_WIDTH : reserved()
+      typeof window === "undefined" ? CHAT_WIDTH : reserved(),
+      bottom
     )
   );
   useEffect(() => {
     const update = () =>
-      setLayout(computeLayout(window.innerWidth, window.innerHeight, reserved()));
+      setLayout(
+        computeLayout(window.innerWidth, window.innerHeight, reserved(), bottom)
+      );
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
@@ -373,6 +443,6 @@ function useLayout(chatOpen: boolean) {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
     };
-  }, [chatOpen]);
+  }, [chatOpen, analysisOn]);
   return layout;
 }

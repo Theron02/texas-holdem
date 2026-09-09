@@ -491,6 +491,102 @@ describe("소켓 통합", () => {
     assert.equal((await loser.emit("hand:show")).ok, false);
   });
 
+  it("승률은 요청한 본인 것만, 본인에게만 온다", async (t) => {
+    const open: TestClient[] = [];
+    t.after(() => open.forEach((c) => c.close()));
+
+    const srv = createGameServer({
+      roomDefaults: {
+        turnTimeoutMs: 0,
+        nextHandDelayMs: 60_000,
+        startingChips: 100_000,
+        fixedBlinds: { smallBlind: 10, bigBlind: 20 },
+      },
+    });
+    const p = await srv.listen(0);
+    t.after(() => srv.close());
+
+    const host = new TestClient("eq1", "A", p);
+    open.push(host);
+    const r = await host.emit<{ roomId: string }>("room:create", {
+      name: "A", playerId: "eq1", mode: "tournament",
+    });
+    const roomId = (r as { ok: true; data: { roomId: string } }).data.roomId;
+    const guest = new TestClient("eq2", "B", p);
+    open.push(guest);
+    await guest.emit("room:join", { roomId, name: "B", playerId: "eq2" });
+    await host.waitFor(() => (host.state?.players.length ?? 0) === 2, "입장");
+
+    // 핸드 전에는 계산할 게 없다
+    const before = await host.emit<null>("analysis:equity");
+    assert.deepEqual(before, { ok: true, data: null });
+
+    await host.emit("room:start");
+    await host.waitFor(() => host.hole !== null, "홀카드");
+
+    const res = await host.emit<{ win: number; tie: number; opponents: number }>(
+      "analysis:equity"
+    );
+    assert.equal(res.ok, true);
+    const eq = (res as { ok: true; data: { win: number; tie: number; opponents: number } }).data;
+    assert.equal(eq.opponents, 1);
+    assert.ok(eq.win >= 0 && eq.win <= 1, `승률 범위: ${eq.win}`);
+    assert.ok(eq.win + eq.tie <= 1);
+
+    // 승률은 "무작위 상대 가정"이라 두 사람 값의 합이 1이 되지는 않는다
+    // (AA vs KK면 둘 다 높게 나온다). 대신 헤즈업에서 가능한 범위 안이어야 한다:
+    // 최악의 핸드 72o가 약 34%, 최고인 AA가 약 85%다.
+    const other = await guest.emit<{ win: number; tie: number }>("analysis:equity");
+    const eq2 = (other as { ok: true; data: { win: number; tie: number } }).data;
+    for (const [who, v] of [["A", eq], ["B", eq2]] as const) {
+      const total = v.win + v.tie;
+      assert.ok(
+        total > 0.25 && total < 0.92,
+        `${who} 승률이 헤즈업 범위를 벗어남: ${(total * 100).toFixed(1)}%`
+      );
+    }
+
+    // 승률 응답에 카드가 실려 나가면 안 된다
+    assert.deepEqual(
+      Object.keys(eq).sort(),
+      ["opponents", "tie", "win"],
+      "승률 외에 다른 정보가 붙으면 안 된다"
+    );
+  });
+
+  it("폴드한 사람은 승률을 받지 못한다", async (t) => {
+    const open: TestClient[] = [];
+    t.after(() => open.forEach((c) => c.close()));
+
+    const host = new TestClient("fq1", "A", port);
+    open.push(host);
+    const r = await host.emit<{ roomId: string }>("room:create", {
+      name: "A", playerId: "fq1", mode: "tournament",
+    });
+    const roomId = (r as { ok: true; data: { roomId: string } }).data.roomId;
+    const guest = new TestClient("fq2", "B", port);
+    open.push(guest);
+    await guest.emit("room:join", { roomId, name: "B", playerId: "fq2" });
+    await host.waitFor(() => (host.state?.players.length ?? 0) === 2, "입장");
+    await host.emit("room:start");
+
+    // 호스트 상태만 보고 고르면, 차례인 쪽의 상태가 아직 안 왔을 때 못 찾는다
+    const ready = () =>
+      [host, guest].find(
+        (c) => c.state?.currentTurn === c.playerId && c.state?.legalActions
+      );
+    await host.waitFor(() => ready() !== undefined, "차례 도착");
+    const actor = ready()!;
+    await actor.emit("player:action", { type: "fold" });
+    await actor.waitFor(
+      () => actor.state!.players.find((x) => x.id === actor.playerId)!.folded,
+      "폴드 반영"
+    );
+
+    const res = await actor.emit("analysis:equity");
+    assert.deepEqual(res, { ok: true, data: null }, "폴드했으면 계산하지 않는다");
+  });
+
   it("차례가 아닌 사람의 액션은 거부된다", async () => {
     const host = new TestClient("t1", "A", port);
     const r = await host.emit<{ roomId: string }>("room:create", { name: "A", playerId: "t1", mode: "tournament" });

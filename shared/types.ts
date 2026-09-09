@@ -149,6 +149,20 @@ export interface RoomState {
   standings: Standing[] | null;
   /** 지금 내 카드를 공개할지 고를 수 있는 상태인지 (진 쪽의 선택) */
   canShowCards: boolean;
+  /**
+   * 지금 내가 만든 족보. 보드까지 합쳐 5장이 되어야 판정되므로
+   * 프리플랍에는 null이다. 본인에게만 나간다.
+   */
+  myHand: { name: string; descr: string } | null;
+}
+
+/** 내 카드 기준 승률. 상대 카드는 쓰지 않고 무작위 핸드로 가정한다. */
+export interface EquityView {
+  /** 이길 확률 0~1 */
+  win: number;
+  /** 비길 확률 0~1 */
+  tie: number;
+  opponents: number;
 }
 
 export interface HoleCardsPayload {
@@ -221,6 +235,8 @@ export interface ClientToServerEvents {
   "hand:show": (cb: (r: Ack<null>) => void) => void;
   /** 게임 시작 전에 자리를 고른다 */
   "seat:take": (p: { seat: number }, cb: (r: Ack<null>) => void) => void;
+  /** 내 승률을 계산해 달라고 요청한다 (본인에게만 응답) */
+  "analysis:equity": (cb: (r: Ack<EquityView | null>) => void) => void;
 }
 
 /** 서버 → 클라이언트 */

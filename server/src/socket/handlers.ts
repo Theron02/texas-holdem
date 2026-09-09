@@ -162,6 +162,17 @@ export function registerHandlers(io: IO, manager: RoomManager): void {
       }
     });
 
+    socket.on("analysis:equity", (cb) => {
+      const room = manager.get(socket.data.roomId ?? "");
+      if (!room) return cb(fail("방에 들어와 있지 않습니다"));
+      try {
+        // 본인에게만 응답한다 — 브로드캐스트하지 않는다
+        cb({ ok: true, data: room.equityFor(socket.data.playerId) });
+      } catch (e) {
+        cb(fail(errText(e)));
+      }
+    });
+
     socket.on("chat:send", ({ text }, cb) => {
       const room = manager.get(socket.data.roomId ?? "");
       if (!room) return cb(fail("방에 들어와 있지 않습니다"));

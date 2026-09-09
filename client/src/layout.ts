@@ -93,18 +93,20 @@ const CHROME_H = { portrait: 190, desktop: 218 };
  *
  * @param reservedRight 오른쪽에 비워둘 폭(열린 채팅 패널 등).
  *   비워두지 않으면 넓은 화면에서 테이블 오른쪽 좌석이 패널에 가린다.
+ * @param reservedBottom 아래에 비워둘 높이(분석 줄 등).
  */
 export function computeLayout(
   vw: number,
   vh: number,
-  reservedRight = 0
+  reservedRight = 0,
+  reservedBottom = 0
 ): TableLayout {
   const portrait = vw < 760;
 
   if (portrait) {
     const width = clamp(vw - 10, 300, 470);
     // 너무 길쭉하면 보기 힘들다 — 세로를 가로의 1.4배로 묶는다
-    const height = clamp(vh - CHROME_H.portrait, 340, width * 1.4);
+    const height = clamp(vh - CHROME_H.portrait - reservedBottom, 340, width * 1.4);
     // 좁은 화면일수록 좌석도 같이 줄여야 가운데에 보드가 들어갈 자리가 남는다
     const seatW = clamp(width * 0.22, 70, 100);
     // 높이는 내용(카드+명패+베팅)이 들어가는 고정값. CSS와 짝을 이룬다.
@@ -123,7 +125,7 @@ export function computeLayout(
   }
 
   const width = clamp(vw - 40 - reservedRight, 640, 1120);
-  const height = clamp(vh - CHROME_H.desktop, 440, width * 0.62);
+  const height = clamp(vh - CHROME_H.desktop - reservedBottom, 440, width * 0.62);
   return makeLayout({
     width,
     height,

@@ -19,6 +19,8 @@ interface Props {
   bigBlind: number;
   /** 이웃 좌석과 겹치지 않도록 계산된 배율 */
   seatScale: number;
+  /** 내가 만든 족보 (내 좌석에만 붙는다) */
+  madeHand?: { label: string; full: string; detail: string } | null;
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -41,6 +43,7 @@ export default function PlayerSeat({
   unit,
   bigBlind,
   seatScale,
+  madeHand,
 }: Props) {
   const dealing = phase !== "waiting";
   const dealFrom = {
@@ -98,7 +101,19 @@ export default function PlayerSeat({
             {player.seat + 1}
           </span>
           {player.isDealer && <span className="dealer-button">D</span>}
-          <span className="seat-name-text">{player.name}</span>
+          {/* 내 이름은 내가 아니까, 그 자리에 지금 족보를 보여준다.
+              좌석 높이가 고정이라 새 줄을 넣으면 배치가 흔들린다. */}
+          {isSelf && madeHand ? (
+            <span
+              className="seat-name-text seat-made"
+              title={`${madeHand.full}${madeHand.detail ? ` — ${madeHand.detail}` : ""}`}
+            >
+              <b>{madeHand.label}</b>
+              {madeHand.detail && <em>{madeHand.detail}</em>}
+            </span>
+          ) : (
+            <span className="seat-name-text">{player.name}</span>
+          )}
           {!player.connected && <span className="seat-badge">접속끊김</span>}
           {player.eliminated && <span className="seat-badge">탈락</span>}
         </div>
