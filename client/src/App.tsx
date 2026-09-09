@@ -33,6 +33,8 @@ export default function App() {
   const [analysisOn, setAnalysisOn] = useState(
     () => localStorage.getItem("holdem:analysis") === "on"
   );
+  // 분석 줄이 "이 금액으로 레이즈하면" 기대값을 계산하려면 슬라이더 값이 필요하다
+  const [raiseAmount, setRaiseAmount] = useState(0);
   const tallEnough = useTallEnough();
   // 화면이 너무 짧으면 켜져 있어도 접는다 — 넣을 자리가 없다
   const showAnalysis = analysisOn && tallEnough;
@@ -210,6 +212,7 @@ export default function App() {
           equity={game.equity}
           loading={game.equityLoading}
           unit={unit}
+          raiseAmount={raiseAmount}
         />
       )}
 
@@ -235,6 +238,7 @@ export default function App() {
             pot={state.totalPot}
             unit={unit}
             onAction={game.act}
+            onRaiseAmount={setRaiseAmount}
             disabled={!game.connected}
           />
         ) : (

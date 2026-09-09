@@ -677,9 +677,17 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 /* ----------------------------------------------------------------- 분석 줄 */
 
 .analysis {
-  display: flex; justify-content: center; flex-wrap: wrap;
+  display: flex; justify-content: center;
+  /* 줄바꿈되면 높이가 늘어 테이블 자리 계산(ANALYSIS_HEIGHT)이 어긋난다.
+     한 줄로 두고 모자라면 가로로 넘긴다. */
+  flex-wrap: nowrap; overflow-x: auto;
   gap: 8px; padding: 7px 16px 0;
+  scrollbar-width: none;
 }
+.analysis::-webkit-scrollbar { display: none; }
+.analysis-stat { flex: none; }
+/* 채팅이 열려 있으면 그만큼 비운다 — 안 그러면 마지막 항목이 가린다 */
+.app-chat-open .analysis { padding-right: 300px; }
 .analysis-stat {
   display: flex; align-items: baseline; gap: 6px;
   background: #121a1f; border: 1px solid var(--line);
@@ -694,6 +702,8 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
 .analysis-stat b.dim { color: var(--muted); font-weight: 600; font-size: 13px; }
 .analysis-stat i { font-style: normal; font-size: 10px; opacity: 0.75; }
 .analysis-equity b { color: var(--gold); }
+.analysis-ev em { font-weight: 600; color: #b6c6d0; }
+.analysis-ev i { color: var(--green); font-weight: 700; opacity: 1; }
 .analysis-stat.ok { border-color: #2f7a56; }
 .analysis-stat.ok b { color: var(--green); }
 .analysis-stat.bad { border-color: #6b3434; }

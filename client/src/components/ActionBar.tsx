@@ -11,11 +11,13 @@ interface Props {
   pot: number;
   unit: ChipUnit;
   onAction: (a: PlayerAction) => void;
+  /** 지금 슬라이더에 잡힌 레이즈 금액. 분석 줄이 이 값으로 계산한다 */
+  onRaiseAmount?: (amount: number) => void;
   disabled?: boolean;
 }
 
 export default function ActionBar({
-  legal, bigBlind, pot, unit, onAction, disabled,
+  legal, bigBlind, pot, unit, onAction, onRaiseAmount, disabled,
 }: Props) {
   const fmt = (n: number) => formatChips(n, unit, bigBlind);
   const [raiseTo, setRaiseTo] = useState(() =>
@@ -61,6 +63,10 @@ export default function ActionBar({
     setAmountText(toText(raiseTo));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unit]);
+
+  useEffect(() => {
+    onRaiseAmount?.(raiseTo);
+  }, [raiseTo, onRaiseAmount]);
 
   const clamp = (v: number) =>
     Math.max(legal.minRaiseTo, Math.min(legal.maxRaiseTo, Math.round(v)));
