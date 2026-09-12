@@ -72,7 +72,9 @@ export default function PlayerSeat({
     >
       <div className="seat-cards">
         <AnimatePresence>
-          {player.hasCards && dealing && (
+          {/* 폴드하면 테이블에서는 카드가 걷히지만, 내 카드는 내가 뭘 접었는지
+              볼 수 있게 흐리게 남겨둔다. 남에게는 어차피 안 내려간다. */}
+          {(player.hasCards || (isSelf && player.cards)) && dealing && (
             <>
               {[0, 1].map((i) => (
                 <Card
@@ -97,9 +99,12 @@ export default function PlayerSeat({
           </div>
         )}
         <div className="seat-name">
-          <span className="seat-no" title={`${player.seat + 1}번 자리`}>
-            {player.seat + 1}
-          </span>
+          {/* 내 자리 번호는 내가 아니까, 족보를 띄울 때는 그 자리를 내준다 */}
+          {!(isSelf && madeHand) && (
+            <span className="seat-no" title={`${player.seat + 1}번 자리`}>
+              {player.seat + 1}
+            </span>
+          )}
           {player.isDealer && <span className="dealer-button">D</span>}
           {/* 내 이름은 내가 아니까, 그 자리에 지금 족보를 보여준다.
               좌석 높이가 고정이라 새 줄을 넣으면 배치가 흔들린다. */}

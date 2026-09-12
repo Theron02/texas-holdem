@@ -386,8 +386,19 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
 }
 .result h3 { margin: 0 0 8px; font-size: 15px; color: var(--gold); text-align: center; }
-.result ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.result li { display: flex; justify-content: space-between; gap: 18px; font-size: 13px; color: var(--muted); }
+.result-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.result-list li {
+  display: grid; grid-template-columns: minmax(48px, auto) auto 1fr;
+  align-items: center; gap: 10px;
+  font-size: 13px; color: var(--muted);
+  padding: 5px 8px; border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.result-list li.win { background: rgba(217, 177, 102, 0.12); color: var(--text); }
+.result-cards { display: flex; gap: 4px; }
+.result-hand { text-align: right; font-size: 13px; }
+.result-list li.win .result-hand { color: var(--gold); font-weight: 700; }
+.result-hand em { font-style: normal; font-size: 11px; opacity: 0.75; margin-left: 5px; }
 .result li.win { color: var(--text); }
 .result li.win b { color: var(--gold); }
 .result-next { margin: 9px 0 0; font-size: 11px; color: var(--muted); text-align: center; }
@@ -593,6 +604,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   .seat-action { font-size: 10px; padding: 1px 5px; top: -8px; }
   /* 좁아서 끗수까지는 못 넣는다 — 툴팁으로 남긴다 */
   .seat-made em { display: none; }
+  .seat-made b { font-size: 11px; }
   .pot-amount { font-size: 13px; padding: 3px 9px 3px 3px; gap: 4px; }
   .pot-amount .chip { width: 12px; height: 12px; }
   .bottombar { padding: 8px 10px 14px; min-height: 84px; }
@@ -611,7 +623,10 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   .chat-open { width: calc(100vw - 16px); }
   .chat-scroll { max-height: 44vh; }
 
-  .result { top: 64px; min-width: 0; width: calc(100vw - 24px); padding: 12px 14px; }
+  .result { top: 60px; min-width: 0; width: calc(100vw - 20px); padding: 12px 12px; }
+  .result-list li { gap: 7px; padding: 4px 6px; font-size: 12px; }
+  .result-hand { font-size: 12px; }
+  .result-hand em { display: none; }
   .menu-pop { min-width: 170px; }
 }
 

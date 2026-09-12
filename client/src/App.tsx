@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { PublicPlayer, Standing } from "../../shared/types.ts";
 import ActionBar from "./components/ActionBar.tsx";
 import Analysis from "./components/Analysis.tsx";
+import Card from "./components/Card.tsx";
 import ChatPanel from "./components/ChatPanel.tsx";
 import Clock from "./components/Clock.tsx";
 import Lobby from "./components/Lobby.tsx";
@@ -14,6 +15,7 @@ import {
   saveChipUnit,
   type ChipUnit,
 } from "./format.ts";
+import { koreanHand } from "./handName.ts";
 import { useHoldem } from "./hooks/useSocket.ts";
 import { computeLayout } from "./layout.ts";
 
@@ -193,13 +195,28 @@ export default function App() {
                 .join(", ")}{" "}
               승리
             </h3>
-            <ul>
-              {game.showdown.reveals.map((r) => (
-                <li key={r.playerId} className={game.showdown!.winners.includes(r.playerId) ? "win" : ""}>
-                  <b>{state.players.find((p) => p.id === r.playerId)?.name}</b>
-                  <span>{r.handDescr}</span>
-                </li>
-              ))}
+            <ul className="result-list">
+              {game.showdown.reveals.map((r) => {
+                const ko =
+                  r.handName && r.handDescr
+                    ? koreanHand({ name: r.handName, descr: r.handDescr })
+                    : null;
+                const won = game.showdown!.winners.includes(r.playerId);
+                return (
+                  <li key={r.playerId} className={won ? "win" : ""}>
+                    <b>{state.players.find((p) => p.id === r.playerId)?.name}</b>
+                    <span className="result-cards">
+                      {r.cards.map((c) => (
+                        <Card key={`${c.rank}${c.suit}`} card={c} width={38} />
+                      ))}
+                    </span>
+                    <span className="result-hand">
+                      {ko ? ko.full : ""}
+                      {ko?.detail && <em>{ko.detail}</em>}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             {game.showdown.nextHandAt && <p className="result-next">곧 다음 핸드가 시작됩니다…</p>}
           </motion.div>

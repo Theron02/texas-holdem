@@ -172,10 +172,13 @@ export interface HoleCardsPayload {
 export interface ShowdownReveal {
   playerId: string;
   cards: Card[];
-  /** 예: "Two Pair" */
-  handName: string;
+  /**
+   * 족보. 전원 폴드로 끝나면 보드가 5장이 안 되어 판정할 수 없으므로 없다.
+   * 예: "Two Pair"
+   */
+  handName?: string;
   /** 예: "Two Pair, A's & 9's" */
-  handDescr: string;
+  handDescr?: string;
 }
 
 export interface Payout {

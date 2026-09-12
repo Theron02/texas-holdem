@@ -142,6 +142,11 @@ export class Room {
   private lastHands = new Map<string, EvaluatedHand>();
   /** 승률 캐시. 같은 상황을 여러 번 물어도 한 번만 계산한다 */
   private equityCache = new Map<string, EquityView>();
+  /**
+   * 지금 스스로 카드를 공개할 수 있는 사람.
+   * 쇼다운에서 자동 공개되지 않은 사람, 그리고 전원 폴드로 이긴 사람.
+   */
+  private mayShow = new Set<string>();
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
 
@@ -421,6 +426,7 @@ export class Room {
     this.handNumber++;
     this.revealed.clear();
     this.lastHands.clear();
+    this.mayShow.clear();
     this.equityCache.clear();
     this.communityCards = [];
     this.deadMoney = 0;
@@ -744,6 +750,8 @@ export class Room {
       this.emitter.log(
         `${winner.name} 님이 팟 ${total}을(를) 가져갑니다 (전원 폴드)`
       );
+      // 보여주고 싶으면 보여줄 수 있게 한다 (블러프였는지 밝히는 재미)
+      if (winner.cards.length === 2) this.mayShow.add(winner.id);
     }
     this.finishHand({
       reveals: [],
@@ -787,6 +795,7 @@ export class Room {
     const allInShowdown = contenders.some((p) => p.allIn);
     for (const p of contenders) {
       if (allInShowdown || winners.has(p.id)) this.revealed.add(p.id);
+      else this.mayShow.add(p.id);
     }
 
     const reveals: ShowdownReveal[] = contenders
@@ -894,7 +903,7 @@ export class Room {
   canShowCards(p: Player): boolean {
     return (
       this.phase === "showdown" &&
-      this.lastHands.has(p.id) &&
+      this.mayShow.has(p.id) &&
       !this.revealed.has(p.id)
     );
   }
@@ -903,17 +912,24 @@ export class Room {
   showCards(playerId: string): void {
     const p = this.players.find((x) => x.id === playerId);
     if (!p) throw new Error("좌석을 찾을 수 없습니다");
-    const hand = this.lastHands.get(playerId);
-    if (!hand) throw new Error("공개할 핸드가 없습니다");
+    if (this.phase !== "showdown") throw new Error("지금은 공개할 수 없습니다");
+    // 이미 공개된 경우를 먼저 봐야 정확한 이유를 알려줄 수 있다
     if (this.revealed.has(playerId)) throw new Error("이미 공개했습니다");
+    if (!this.mayShow.has(playerId)) throw new Error("공개할 핸드가 없습니다");
 
     this.revealed.add(playerId);
-    this.emitter.log(`${p.name} 님이 카드를 공개했습니다 — ${hand.descr}`);
+    // 전원 폴드로 끝났으면 보드가 5장이 안 되어 족보를 매길 수 없다
+    const hand = this.lastHands.get(playerId);
+    this.emitter.log(
+      hand
+        ? `${p.name} 님이 카드를 공개했습니다 — ${hand.descr}`
+        : `${p.name} 님이 카드를 공개했습니다`
+    );
     this.emitter.reveal({
       playerId,
       cards: p.cards,
-      handName: hand.name,
-      handDescr: hand.descr,
+      handName: hand?.name,
+      handDescr: hand?.descr,
     });
     this.emitter.state();
   }
@@ -1208,6 +1224,8 @@ export class Room {
         allIn: p.allIn,
         connected: p.connected,
         sittingOut: p.sittingOut,
+        // 남의 눈에는 폴드하면 카드가 사라진다.
+        // 내 카드는 아래 cards로 계속 내려가서, 내 화면에서는 흐리게 남는다.
         hasCards: p.inHand && p.cards.length > 0 && !p.folded,
         cards: visible && p.cards.length > 0 ? p.cards : null,
         isDealer: this.players[this.dealerIndex]?.id === p.id,

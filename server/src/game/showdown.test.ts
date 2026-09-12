@@ -36,6 +36,20 @@ function playPassive(room: Room) {
   }
 }
 
+/**
+ * 진 사람이 나올 때까지 돌린다.
+ * 보드가 최고 핸드면 전원이 승자라 한 판으로는 보장되지 않는다.
+ */
+function playUntilLoser(room: Room, results: ShowdownResult[], max = 40) {
+  for (let i = 0; i < max; i++) {
+    playPassive(room);
+    const r = results.at(-1)!;
+    const contenders = room.players.filter((p) => p.inHand && !p.folded);
+    if (r.winners.length < contenders.length) return;
+  }
+  throw new Error("진 사람이 나오지 않았습니다");
+}
+
 describe("쇼다운 공개 범위", () => {
   it("올인이 없으면 이긴 핸드만 자동 공개된다", () => {
     const { room, results } = makeRoom(["A", "B", "C"]);
@@ -85,7 +99,7 @@ describe("쇼다운 공개 범위", () => {
 
   it("진 사람은 스스로 카드를 공개할 수 있다", () => {
     const { room, results, reveals, logs } = makeRoom(["A", "B", "C"]);
-    playPassive(room);
+    playUntilLoser(room, results);
 
     const winners = new Set(results.at(-1)!.winners);
     const loser = room.players.find((p) => !winners.has(p.id) && !p.folded)!;
@@ -108,7 +122,7 @@ describe("쇼다운 공개 범위", () => {
 
   it("두 번 공개할 수는 없다", () => {
     const { room, results } = makeRoom(["A", "B", "C"]);
-    playPassive(room);
+    playUntilLoser(room, results);
     const winners = new Set(results.at(-1)!.winners);
     const loser = room.players.find((p) => !winners.has(p.id) && !p.folded)!;
     room.showCards(loser.id);
@@ -125,13 +139,83 @@ describe("쇼다운 공개 범위", () => {
 
   it("다음 핸드가 시작되면 공개 선택이 닫힌다", () => {
     const { room, results } = makeRoom(["A", "B", "C"]);
-    playPassive(room);
+    playUntilLoser(room, results);
     const winners = new Set(results.at(-1)!.winners);
     const loser = room.players.find((p) => !winners.has(p.id) && !p.folded)!;
     assert.equal(room.canShowCards(loser), true);
 
     room.startHand();
     assert.equal(room.canShowCards(loser), false, "새 핸드에서는 고를 수 없다");
+  });
+});
+
+describe("전원 폴드로 이겼을 때 공개", () => {
+  it("이긴 사람이 원하면 카드를 공개할 수 있다", () => {
+    const { room, reveals, logs } = makeRoom(["A", "B", "C"]);
+    room.startHand();
+    room.act(turn(room)!, { type: "fold" });
+    room.act(turn(room)!, { type: "fold" });
+
+    assert.equal(room.phase, "showdown");
+    const winner = room.players.find((p) => !p.folded && p.inHand)!;
+    assert.equal(room.canShowCards(winner), true, "블러프였는지 밝힐 수 있어야 한다");
+
+    room.showCards(winner.id);
+    assert.equal(reveals.length, 1);
+    assert.equal(reveals[0]!.cards.length, 2);
+    assert.equal(
+      reveals[0]!.handName,
+      undefined,
+      "보드가 5장이 안 되어 족보를 매길 수 없다"
+    );
+    assert.ok(logs.some((l) => l.includes("카드를 공개했습니다")));
+
+    // 공개했으니 남에게도 보인다
+    const other = room.players.find((p) => p.id !== winner.id)!;
+    const seen = room.toPublicState(other.id).players.find((p) => p.id === winner.id)!;
+    assert.equal(seen.cards?.length, 2);
+  });
+
+  it("진 사람(폴드한 사람)은 공개할 수 없다", () => {
+    const { room } = makeRoom(["A", "B", "C"]);
+    room.startHand();
+    const first = turn(room)!;
+    room.act(first, { type: "fold" });
+    room.act(turn(room)!, { type: "fold" });
+
+    const folded = room.players.find((p) => p.id === first)!;
+    assert.equal(room.canShowCards(folded), false);
+    assert.throws(() => room.showCards(folded.id), /공개할 핸드가 없습니다/);
+  });
+
+  it("다음 핸드가 시작되면 공개 기회가 닫힌다", () => {
+    const { room } = makeRoom(["A", "B", "C"]);
+    room.startHand();
+    room.act(turn(room)!, { type: "fold" });
+    room.act(turn(room)!, { type: "fold" });
+    const winner = room.players.find((p) => !p.folded && p.inHand)!;
+    assert.equal(room.canShowCards(winner), true);
+
+    room.startHand();
+    assert.equal(room.canShowCards(winner), false);
+  });
+});
+
+describe("폴드해도 내 카드는 나에게 보인다", () => {
+  it("남에게는 사라지고 나에게는 남는다", () => {
+    const { room } = makeRoom(["A", "B", "C"]);
+    room.startHand();
+    const me = room.players.find((p) => p.id === turn(room))!;
+    room.act(me.id, { type: "fold" });
+
+    const mine = room.toPublicState(me.id).players.find((p) => p.id === me.id)!;
+    assert.equal(mine.folded, true);
+    assert.equal(mine.hasCards, false, "테이블에서는 카드가 걷힌다");
+    assert.equal(mine.cards?.length, 2, "내 카드는 내가 계속 볼 수 있어야 한다");
+
+    const other = room.players.find((p) => p.id !== me.id)!;
+    const seen = room.toPublicState(other.id).players.find((p) => p.id === me.id)!;
+    assert.equal(seen.cards, null, "남에게는 보이면 안 된다");
   });
 });
 
